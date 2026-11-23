@@ -218,3 +218,27 @@ def test_open_doors_and_windows_let_light_out(starter):
     assert max(xs) > 7          # through the open east door
     assert min(ys) < 0.5        # through the north window
     assert max(ys) <= 7.01      # the closed south door blocks
+def test_wall_junctions_and_joint_pieces():
+    from mapwriter.geometry import joint_shape, wall_junctions
+    # a box split by an inner wall: four corners and two T-joints
+    walls = [(0, 0, 10, 0), (0, 6, 10, 6), (0, 0, 0, 6), (10, 0, 10, 6), (5, 0, 5, 6)]
+    j = wall_junctions(walls)
+    assert joint_shape(j[(0, 0)]) == ("corner", 0)      # arms east and south
+    assert joint_shape(j[(10, 0)]) == ("corner", 1)     # south and west
+    assert joint_shape(j[(10, 6)]) == ("corner", 2)
+    assert joint_shape(j[(0, 6)]) == ("corner", 3)
+    assert joint_shape(j[(5, 0)]) == ("tee", 0)         # west, east and south
+    assert joint_shape(j[(5, 6)]) == ("tee", 2)         # west, east and north
+    assert joint_shape({"N", "E", "S", "W"}) == ("cross", 0)
+    assert len(j) == 6
+
+
+def test_fa_wall_set_gives_joint_pieces():
+    from mapwriter.plan import _wall_joints
+    base = "Walls/Wall_Stone_A/Wall_Stone_Slate_A_"
+    idx = Index([describe(base + n + ".webp", "FA", "/fa")
+                 for n in ("Straight_Path", "Corner_A_1x1", "Joint_A_1x1", "Joint_B_1x1")])
+    strip = idx.assets[0]
+    joints = _wall_joints([(0, 0, 4, 0), (0, 0, 0, 4)], strip, idx)
+    assert [(x, y, a.name, k) for x, y, a, k in joints] == [(0, 0, "Wall_Stone_Slate_A_Corner_A_1x1.webp", 0)]
+    assert _wall_joints([(0, 0, 4, 0), (0, 0, 0, 4)], None, idx) == []

@@ -116,6 +116,7 @@ class Painter:
         im = alpha_crop(self.cv.raw(a))
         if im.height > im.width:
             im = im.rotate(90, expand=True)
+        self._wall_band = im.height
         k = self.t / im.height
         return im.resize((max(1, round(im.width * k)), self.t), Image.LANCZOS)
 
@@ -152,6 +153,16 @@ class Painter:
                 ac(layer, s, (min(X0, X1) - t // 2, Y0 - t // 2))
             else:
                 ac(layer, s.rotate(90, expand=True), (X0 - t // 2, min(Y0, Y1) - t // 2))
+        if strip is not None:
+            # Joint pieces share the strip's band thickness; scale them the same way.
+            k = t / self._wall_band
+            for x, y, asset, turns in self.plan.wall_joints:
+                im = self.cv.raw(asset)
+                im = im.resize((max(1, round(im.width * k)), max(1, round(im.height * k))), Image.LANCZOS)
+                if turns:
+                    im = im.rotate(-90 * turns, expand=True)
+                X, Y = cv.P(x, y)
+                ac(layer, im, (X - im.width // 2, Y - im.height // 2))
         a = layer.getchannel("A")
         ao = a.filter(ImageFilter.GaussianBlur(cv.R * 0.22)).point(lambda v: int(min(255, v * 1.4) * 0.55))
         aol = Image.new("RGBA", cv.img.size, (15, 12, 20, 0)); aol.putalpha(ao)

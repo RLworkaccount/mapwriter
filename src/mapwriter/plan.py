@@ -11,7 +11,8 @@ import random
 from dataclasses import dataclass, field
 
 from .assets.index import Asset, Index
-from .geometry import distance_to_segment, light_area, merge_walls, on_wall, reachable
+from .geometry import (distance_to_segment, joint_shape, light_area, merge_walls, on_wall, reachable,
+                       wall_junctions)
 from .scene import Scene, Prop, Light, Opening, Room, SceneError
 
 
@@ -52,6 +53,7 @@ class Plan:
     walls: list = field(default_factory=list)              # after
     light_walls: list = field(default_factory=list)        # walls and closed doors: what stops light
     light_areas: list = field(default_factory=list)        # one polygon per light: where its light reaches
+    wall_joints: list = field(default_factory=list)        # (x, y, asset, clockwise quarter turns)
     wall_asset: Asset | None = None
     openings: list[tuple[Opening, Asset | None]] = field(default_factory=list)
     props: list[Placed] = field(default_factory=list)
@@ -160,6 +162,7 @@ def build(scene: Scene, index: Index) -> Plan:
     # Light passes through windows, arches and open doors, and is stopped by walls and closed doors.
     plan.light_walls = merge_walls(raw, [o for o, _ in plan.openings
                                          if o.kind in ("window", "arch") or o.open])
+    plan.wall_joints = _wall_joints(plan.walls, plan.wall_asset, index)
 
     # ---------- props ----------
     occupied: set[tuple[int, int]] = set()
@@ -290,6 +293,24 @@ def _light_area(scene: Scene, L: Light, blockers) -> list:
             d = max(1e-6, ((cx - x) ** 2 + (cy - y) ** 2) ** 0.5)
             x, y = x + 0.15 * (cx - x) / d, y + 0.15 * (cy - y) / d
     return light_area((x, y), blockers, L.radius)
+# Forgotten Adventures sets ship joint pieces next to each *_Straight_Path strip.
+JOINT_NAMES = {"corner": "Corner_A_1x1", "tee": "Joint_B_1x1", "cross": "Joint_A_1x1"}
+
+
+def _wall_joints(walls, wall_asset: Asset | None, index: Index) -> list:
+    """Corner, T and cross pieces from the wall's own set, where the pack has them."""
+    if wall_asset is None or "Straight_Path" not in wall_asset.rel:
+        return []
+    pieces = {}
+    for kind, name in JOINT_NAMES.items():
+        rel = wall_asset.rel.replace("Straight_Path", name)
+        pieces[kind] = next((a for a in index.assets if a.pack == wall_asset.pack and a.rel == rel), None)
+    out = []
+    for (x, y), arms in sorted(wall_junctions(walls).items()):
+        kind, turns = joint_shape(arms)
+        if kind and pieces.get(kind) is not None:
+            out.append((x, y, pieces[kind], turns))
+    return out
 
 
 def _auto_place(room: Room, p: Prop, a, count, occupied, door_squares, rnd, warn, name):
