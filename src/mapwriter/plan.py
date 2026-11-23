@@ -11,7 +11,7 @@ import random
 from dataclasses import dataclass, field
 
 from .assets.index import Asset, Index
-from .geometry import merge_walls, on_wall, reachable
+from .geometry import joint_shape, merge_walls, on_wall, reachable, wall_junctions
 from .scene import Scene, Prop, Light, Opening, Room, SceneError
 
 
@@ -50,6 +50,7 @@ class Plan:
     floors: list[Floor] = field(default_factory=list)
     raw_walls: list = field(default_factory=list)          # before openings are cut
     walls: list = field(default_factory=list)              # after
+    wall_joints: list = field(default_factory=list)        # (x, y, asset, clockwise quarter turns)
     wall_asset: Asset | None = None
     openings: list[tuple[Opening, Asset | None]] = field(default_factory=list)
     props: list[Placed] = field(default_factory=list)
@@ -155,6 +156,7 @@ def build(scene: Scene, index: Index) -> Plan:
             asset = (index.get(o.file) if o.file else None) or index.pick(want, "window", seed=seed)
         plan.openings.append((o, asset))
     plan.walls = merge_walls(raw, [o for o, _ in plan.openings if o.kind != "window"])
+    plan.wall_joints = _wall_joints(plan.walls, plan.wall_asset, index)
 
     # ---------- props ----------
     occupied: set[tuple[int, int]] = set()
@@ -272,6 +274,26 @@ def build(scene: Scene, index: Index) -> Plan:
             if inside and not any(s in reach for s in inside):
                 warn(f"Room '{r.name}' has no way in (no door or arch reaches it).")
     return plan
+
+
+# Forgotten Adventures sets ship joint pieces next to each *_Straight_Path strip.
+JOINT_NAMES = {"corner": "Corner_A_1x1", "tee": "Joint_B_1x1", "cross": "Joint_A_1x1"}
+
+
+def _wall_joints(walls, wall_asset: Asset | None, index: Index) -> list:
+    """Corner, T and cross pieces from the wall's own set, where the pack has them."""
+    if wall_asset is None or "Straight_Path" not in wall_asset.rel:
+        return []
+    pieces = {}
+    for kind, name in JOINT_NAMES.items():
+        rel = wall_asset.rel.replace("Straight_Path", name)
+        pieces[kind] = next((a for a in index.assets if a.pack == wall_asset.pack and a.rel == rel), None)
+    out = []
+    for (x, y), arms in sorted(wall_junctions(walls).items()):
+        kind, turns = joint_shape(arms)
+        if kind and pieces.get(kind) is not None:
+            out.append((x, y, pieces[kind], turns))
+    return out
 
 
 def _auto_place(room: Room, p: Prop, a, count, occupied, door_squares, rnd, warn, name):
