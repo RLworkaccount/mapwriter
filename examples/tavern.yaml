@@ -53,7 +53,7 @@ props:
   - { want: bench, in: Common room, along: south, count: 1 }
   - { want: plant, at: [2, 12] }
   - { want: lantern, at: [8, 5] }
-  - { want: cat, at: [5, 4], label: Biscuit the cat }
+  - { want: candle, at: [5, 4] }
   # kitchen
   - { want: cauldron, at: [20, 3] }
   - { want: table, at: [18, 5], size: [2, 1] }
@@ -74,4 +74,4 @@ lights:
 
 notes:
   - { at: [21.5, 13.5], text: "Strongbox (locked, DC 12). Holds 40 gp and the deed to the inn." }
-  - { at: [5.5, 4.5], text: "Biscuit the cat. Follows anyone carrying fish." }
+  - { at: [3.5, 2.5], text: "Loose hearthstone. Behind it, a pouch with 12 sp and a love letter." }

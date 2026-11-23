@@ -75,11 +75,11 @@ props:
   - { want: counter, at: [4, 3], size: [4, 1] }
   - { want: bookshelf, in: Shop, along: north, count: 3 }
   - { want: barrel, in: Shop, count: 2 }
-  - { want: cat, at: [5, 2], label: Biscuit }
+  - { want: chest, at: [11, 7], label: strongbox }
 lights:
   - { at: [7, 4], radius: 6, colour: warm }
 notes:
-  - { at: [5, 2], text: "Biscuit the cat. Follows anyone carrying fish." }
+  - { at: [11.5, 7.5], text: "Pelbury's strongbox. Locked; the key is under the counter." }
 ```
 
 The full format is in [docs/scene-format.md](docs/scene-format.md).

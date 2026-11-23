@@ -295,16 +295,6 @@ def sack(c=(186, 160, 112)):
     return _done(im)
 
 
-def cat(fur=(200, 130, 70)):
-    im = _new(1, 1); d = ImageDraw.Draw(im); s = S * SS
-    d.ellipse([s * .3, s * .38, s * .7, s * .7], fill=fur + (255,))
-    d.ellipse([s * .38, s * .26, s * .62, s * .46], fill=fur + (255,))
-    for x in (.4, .6):
-        d.polygon([(s * (x - .05), s * .3), (s * x, s * .2), (s * (x + .05), s * .3)], fill=fur + (255,))
-    d.line([s * .66, s * .6, s * .8, s * .74, s * .74, s * .8], fill=fur + (255,), width=14, joint="curve")
-    return _done(im)
-
-
 def altar(stone=(170, 166, 160), cloth=(70, 80, 150)):
     im = _new(2, 1); d = ImageDraw.Draw(im); s = S * SS
     d.rounded_rectangle([s * .06, s * .16, 2 * s - s * .06, s * .84], radius=14, fill=stone + (255,), outline=_shade(stone, .5) + (255,), width=10)
@@ -392,9 +382,8 @@ def build_pack(out_dir: str | Path) -> int:
     save(f"{C}/Containers/Sack_Cloth_1x1.png", sack())
     save(f"{C}/Lightsources/Candle_Wax_1x1.png", candle())
     save(f"{C}/Lightsources/Lantern_Iron_1x1.png", lantern())
-    save(f"{C}/Animals/Cat_Ginger_1x1.png", cat())
-    save(f"{C}/Animals/Cage_Metal_1x1.png", cage(1))
-    save(f"{C}/Animals/Cage_Metal_2x1.png", cage(2))
+    save(f"{C}/Cages/Cage_Metal_1x1.png", cage(1))
+    save(f"{C}/Cages/Cage_Metal_2x1.png", cage(2))
     N = "Nature"
     save(f"{N}/Plants/Plant_Potted_Green_1x1.png", plant(seed=1))
     save(f"{N}/Plants/Plant_Potted_Flowering_1x1.png", plant((150, 90, 150), seed=2))
