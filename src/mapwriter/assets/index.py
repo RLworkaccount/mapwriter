@@ -63,39 +63,54 @@ def _read_manifest(root: Path) -> dict:
     return {}
 
 
-def scan(root: str | os.PathLike, pack: str | None = None, read_sizes: bool = True) -> list[Asset]:
-    """Walk one pack folder and describe every image in it."""
+def _image_size(full) -> list[int] | None:
+    try:
+        from PIL import Image
+        with Image.open(full) as im:
+            return [im.width, im.height]
+    except Exception:
+        return None
+
+
+def scan(root: str | os.PathLike, pack: str | None = None, read_sizes: bool = True,
+         workers: int = 16) -> list[Asset]:
+    """Walk one pack folder and describe every image in it.
+
+    Reading each image's size means opening its header, which is slow on a cold
+    disk (about 10 ms a file). Big packs have well over 100,000 images, so the
+    headers are read on a pool of threads.
+    """
     root = Path(root).resolve()
     man = _read_manifest(root)
     pack = pack or man.get("name") or root.name
     ppsq = int(man.get("px_per_square", DEFAULT_PPSQ))
     overrides = man.get("tags", {}) or {}
     kinds = man.get("kinds", {}) or {}
-    out: list[Asset] = []
+    found: list[tuple[str, Path]] = []
     for dirpath, _dirs, files in os.walk(root):
         for fn in sorted(files):
             ext = os.path.splitext(fn)[1].lower()
             if ext not in naming.IMAGE_EXTS:
                 continue
             full = Path(dirpath) / fn
-            rel = full.relative_to(root).as_posix()
-            out.append(describe(rel, pack, str(root), ppsq, overrides, kinds, full if read_sizes else None))
-    return out
+            found.append((full.relative_to(root).as_posix(), full))
+    sizes: list[list[int] | None] = [None] * len(found)
+    if read_sizes and found:
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max(1, workers)) as ex:
+            sizes = list(ex.map(_image_size, (full for _rel, full in found), chunksize=64))
+    return [describe(rel, pack, str(root), ppsq, overrides, kinds, px=px)
+            for (rel, _full), px in zip(found, sizes)]
 
 
-def describe(rel: str, pack: str, root: str, ppsq: int = DEFAULT_PPSQ, overrides=None, kinds=None, full=None) -> Asset:
+def describe(rel: str, pack: str, root: str, ppsq: int = DEFAULT_PPSQ, overrides=None, kinds=None, full=None,
+             px: list[int] | None = None) -> Asset:
     fp = naming.footprint(os.path.basename(rel))
     kind = naming.kind_for(rel)
     if kind == "floor" and fp is not None:
         kind = "prop"
-    px = None
-    if full is not None:
-        try:
-            from PIL import Image
-            with Image.open(full) as im:
-                px = [im.width, im.height]
-        except Exception:
-            px = None
+    if px is None and full is not None:
+        px = _image_size(full)
     if fp is None and px and kind in ("prop", "door", "window"):
         fp = [max(1, round(px[0] / ppsq)), max(1, round(px[1] / ppsq))]
     extra = []

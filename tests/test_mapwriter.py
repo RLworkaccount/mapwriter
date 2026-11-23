@@ -70,6 +70,19 @@ def test_pack_order_breaks_ties(tmp_path):
     assert Index(list(reversed(a))).pick("chair").pack == "Second"
 
 
+def test_scan_reads_sizes_in_threads(tmp_path):
+    from PIL import Image
+    from mapwriter.assets.index import scan
+    for i in range(40):
+        Image.new("RGBA", (200 + i, 400)).save(tmp_path / f"Crate_{i:02d}.png")
+    (tmp_path / "broken.png").write_bytes(b"not an image")
+    assets = {a.rel: a for a in scan(tmp_path, workers=4)}
+    assert assets["Crate_07.png"].px == [207, 400]
+    assert assets["Crate_07.png"].footprint == [1, 2]
+    assert assets["broken.png"].px is None
+    assert all(a.px is None for a in scan(tmp_path, read_sizes=False))
+
+
 # ------------------------------------------------------------------ scene
 ROOMS = {
     "name": "Test", "grid": {"width": 12, "height": 8},
