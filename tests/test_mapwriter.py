@@ -70,6 +70,15 @@ def test_pack_order_breaks_ties(tmp_path):
     assert Index(list(reversed(a))).pick("chair").pack == "Second"
 
 
+def test_plain_furniture_beats_arrangements():
+    names = ["Clutter/Table_Arrangements/Table_Arrangement_A89_3x2.webp",
+             "Furniture/Tables/Table_Rectangle_Wood_Dark_B_3x2.webp"]
+    idx = Index([describe(n, "FA", "/fa") for n in names])
+    assert "Rectangle" in idx.pick("big table", size=(3, 2)).rel
+    assert "Arrangement" in idx.pick("table arrangement").rel
+    assert idx.pick("sofa") is None
+
+
 # ------------------------------------------------------------------ scene
 ROOMS = {
     "name": "Test", "grid": {"width": 12, "height": 8},
