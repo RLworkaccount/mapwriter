@@ -198,3 +198,125 @@ def joint_shape(arms: set[str]):
         if {CW[(CW.index(d) + k) % 4] for d in base} == arms:
             return kind, k
     return None, 0
+
+
+# ---------------------------------------------------------------- outdoor shapes
+class Region:
+    """A patch of ground: either a closed outline (``poly``) or a strip along a
+    line (``line``, with a half-width in ``radii`` at each point). Both are worked
+    out once in the plan, so the sketch, the painting and later scatter rules all
+    see the same edge."""
+
+    def __init__(self, poly=None, line=None, radii=None):
+        self.poly = poly
+        self.line = line
+        self.radii = radii
+
+    def bbox(self):
+        if self.poly is not None:
+            xs = [p[0] for p in self.poly]; ys = [p[1] for p in self.poly]
+            return min(xs), min(ys), max(xs), max(ys)
+        r = max(self.radii)
+        xs = [p[0] for p in self.line]; ys = [p[1] for p in self.line]
+        return min(xs) - r, min(ys) - r, max(xs) + r, max(ys) + r
+
+    def contains(self, x, y) -> bool:
+        if self.poly is not None:
+            return point_in_poly(x, y, self.poly)
+        return any(math.hypot(x - px, y - py) <= r for (px, py), r in zip(self.line, self.radii))
+
+
+def point_in_poly(x, y, poly) -> bool:
+    inside = False
+    n = len(poly)
+    for i in range(n):
+        (x0, y0), (x1, y1) = poly[i], poly[(i + 1) % n]
+        if (y0 > y) != (y1 > y) and x < x0 + (y - y0) * (x1 - x0) / (y1 - y0):
+            inside = not inside
+    return inside
+
+
+def smooth_noise(n, period, rnd, closed):
+    """n values in about -1..1 that wander smoothly, with a new bump every ``period`` samples."""
+    knots = max(2, int(math.ceil(n / max(1, period))) + (0 if closed else 1))
+    vals = [rnd.uniform(-1, 1) for _ in range(knots)]
+    out = []
+    for i in range(n):
+        t = i / max(1, period)
+        k = int(t); f = t - k
+        a = vals[k % knots] if closed else vals[min(k, knots - 1)]
+        b = vals[(k + 1) % knots] if closed else vals[min(k + 1, knots - 1)]
+        f = (1 - math.cos(math.pi * f)) / 2
+        out.append(a + (b - a) * f)
+    return out
+
+
+def resample(points, step, closed):
+    """Points spaced about ``step`` apart along the line (or round the outline)."""
+    pts = list(points) + ([points[0]] if closed else [])
+    out = [pts[0]]
+    for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
+        L = math.hypot(x1 - x0, y1 - y0)
+        n = max(1, int(math.ceil(L / step)))
+        out += [(x0 + (x1 - x0) * i / n, y0 + (y1 - y0) * i / n) for i in range(1, n + 1)]
+    return out[:-1] if closed else out
+
+
+def chaikin(poly, rounds=3, closed=True):
+    """Round off corners by cutting them, ``rounds`` times."""
+    pts = list(poly)
+    for _ in range(rounds):
+        nxt = [] if closed else [pts[0]]
+        segs = zip(pts, pts[1:] + pts[:1]) if closed else zip(pts, pts[1:])
+        for (x0, y0), (x1, y1) in segs:
+            nxt += [(0.75 * x0 + 0.25 * x1, 0.75 * y0 + 0.25 * y1), (0.25 * x0 + 0.75 * x1, 0.25 * y0 + 0.75 * y1)]
+        pts = nxt if closed else nxt + [pts[-1]]
+    return pts
+
+
+def catmull_rom(points, step=0.2):
+    """A smooth curve through every point, sampled about ``step`` squares apart."""
+    if len(points) < 3:
+        return resample(points, step, False)
+    p = [points[0]] + list(points) + [points[-1]]
+    out = [points[0]]
+    for i in range(1, len(p) - 2):
+        p0, p1, p2, p3 = p[i - 1], p[i], p[i + 1], p[i + 2]
+        n = max(2, int(math.ceil(math.hypot(p2[0] - p1[0], p2[1] - p1[1]) / step)))
+        for k in range(1, n + 1):
+            t = k / n; t2 = t * t; t3 = t2 * t
+            out.append(tuple(0.5 * (2 * p1[j] + (-p0[j] + p2[j]) * t + (2 * p0[j] - 5 * p1[j] + 4 * p2[j] - p3[j]) * t2
+                                    + (-p0[j] + 3 * p1[j] - 3 * p2[j] + p3[j]) * t3) for j in (0, 1)))
+    return out
+
+
+def rough_outline(poly, rough, rnd, smooth=False, step=0.25):
+    """Make an outline wander in and out by up to ``rough`` squares, like a worn lawn edge."""
+    pts = chaikin(poly) if smooth else list(poly)
+    if rough <= 0:
+        return pts
+    pts = resample(pts, step, True)
+    n = len(pts)
+    noise = smooth_noise(n, max(2, int(1.6 / step)), rnd, True)
+    fine = smooth_noise(n, max(2, int(0.5 / step)), rnd, True)
+    # Sign of the area tells us which way "outwards" is.
+    area = sum(pts[i][0] * pts[(i + 1) % n][1] - pts[(i + 1) % n][0] * pts[i][1] for i in range(n))
+    out_sign = 1 if area > 0 else -1
+    out = []
+    for i in range(n):
+        (ax, ay), (bx, by) = pts[i - 1], pts[(i + 1) % n]
+        tx, ty = bx - ax, by - ay
+        L = math.hypot(tx, ty) or 1.0
+        nx, ny = -ty / L * out_sign, tx / L * out_sign      # outward normal (y runs down)
+        d = rough * (0.8 * noise[i] + 0.2 * fine[i])
+        out.append((pts[i][0] + nx * d, pts[i][1] + ny * d))
+    return out
+
+
+def path_strip(points, width, rough, rnd, curve=True, step=0.15) -> Region:
+    """A strip ``width`` squares wide along the points, its edges wandering by ``rough``."""
+    line = catmull_rom(points, step) if curve else resample(points, step, False)
+    n = len(line)
+    noise = smooth_noise(n, max(2, int(1.2 / step)), rnd, False)
+    radii = [max(0.1, width / 2 + rough * v) for v in noise]
+    return Region(line=line, radii=radii)

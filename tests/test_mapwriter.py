@@ -242,3 +242,54 @@ def test_fa_wall_set_gives_joint_pieces():
     joints = _wall_joints([(0, 0, 4, 0), (0, 0, 0, 4)], strip, idx)
     assert [(x, y, a.name, k) for x, y, a, k in joints] == [(0, 0, "Wall_Stone_Slate_A_Corner_A_1x1.webp", 0)]
     assert _wall_joints([(0, 0, 4, 0), (0, 0, 0, 4)], None, idx) == []
+
+
+# ------------------------------------------------------------------ outdoors (v0.2)
+OUTDOOR = {"name": "Green", "grid": {"width": 16, "height": 12, "px_per_square": 40}, "ground": "grass",
+           "areas": [{"name": "pond lawn", "circle": [8, 6, 3], "floor": "cobblestone", "rough": 0.4},
+                     {"name": "slope", "shape": [[0, 0], [5, 0], [1, 4]], "floor": "dirt", "smooth": True}],
+           "paths": [{"name": "lane", "points": [[0, 10], [6, 9], [16, 11]], "width": 2, "floor": "dirt path"}]}
+
+
+def test_outdoor_areas_and_paths_parse():
+    sc = parse(OUTDOOR)
+    assert len(sc.areas[0].poly) == 48                   # circle outline
+    assert sc.areas[1].poly[2] == (1.0, 4.0)             # diagonal edges are fine for areas
+    assert sc.paths[0].width == 2 and sc.paths[0].curve
+    bad = json.loads(json.dumps(OUTDOOR))
+    bad["paths"][0]["points"] = [[1, 1]]
+    with pytest.raises(SceneError, match="at least two points"):
+        parse(bad)
+    bad = json.loads(json.dumps(OUTDOOR)); bad["areas"][0]["circle"] = [1, 2]
+    with pytest.raises(SceneError, match="circle"):
+        parse(bad)
+    bad = {"name": "x", "grid": {"width": 4, "height": 4}, "rooms": [{"name": "r", "shape": [[0, 0], [3, 0], [0, 3]]}]}
+    with pytest.raises(SceneError, match="diagonal"):
+        parse(bad)                                       # rooms still need square walls
+
+
+def test_rough_edges_and_path_strips_in_plan(starter):
+    plan = build(parse(OUTDOOR), starter)
+    names = [f.name for f in plan.floors]
+    assert names == ["ground", "lane", "pond lawn", "slope"]   # paths go under areas
+    lawn = plan.floors[2].region
+    radii = [((x - 8) ** 2 + (y - 6) ** 2) ** 0.5 for x, y in lawn.poly]
+    assert 2.5 < min(radii) < 3 < max(radii) < 3.5             # the edge wanders, but not far
+    assert lawn.contains(8, 6) and not lawn.contains(8, 1)
+    lane = plan.floors[1].region
+    assert lane.poly is None and lane.contains(6, 9) and not lane.contains(6, 5)
+    assert all(0.5 < r < 1.5 for r in lane.radii)
+    again = build(parse(OUTDOOR), starter)                     # same seed, same edges
+    assert again.floors[2].region.poly == lawn.poly
+
+
+def test_outdoor_render(starter, tmp_path):
+    from mapwriter.build import render_all, write_sketch
+    plan = build(parse(OUTDOOR), starter)
+    out = render_all(plan, tmp_path, uvtt=False)
+    write_sketch(plan, tmp_path, px=20)
+    from PIL import Image
+    im = Image.open(out["day image"]).convert("RGB")
+    lane, lawn = im.getpixel((6 * 40, 9 * 40 + 20)), im.getpixel((8 * 40, 6 * 40))
+    grass = im.getpixel((14 * 40, 2 * 40))
+    assert lane != grass and lawn != grass
