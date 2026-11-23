@@ -1,0 +1,334 @@
+"""Resolve a Scene against an asset Index into a concrete Plan.
+
+The plan says exactly which image goes where, which wall lines exist after
+doors are cut, and where every light sits. Sketch, painter and exporters all
+read the plan, so they always agree.
+"""
+from __future__ import annotations
+
+import math
+import random
+from dataclasses import dataclass, field
+
+from .assets.index import Asset, Index
+from .geometry import merge_walls, on_wall, reachable
+from .scene import Scene, Prop, Light, Opening, Room, SceneError
+
+
+@dataclass
+class Placed:
+    want: str
+    asset: Asset | None
+    box: tuple[float, float, float, float]   # squares covered (x0, y0, x1, y1)
+    rot: float                                # clockwise degrees applied to the image
+    label: str | None = None
+    layer: int = 1
+    scale: float = 1.0
+    shadow: bool = True
+    flip: bool = False
+    fit_rot: float = 0.0                      # extra rotation to make the image fit the box
+
+    @property
+    def centre(self):
+        x0, y0, x1, y1 = self.box
+        return (x0 + x1) / 2, (y0 + y1) / 2
+
+
+@dataclass
+class Floor:
+    name: str
+    poly: list
+    want: str | None
+    asset: Asset | None
+    soft: float = 0.0
+    is_room: bool = False
+
+
+@dataclass
+class Plan:
+    scene: Scene
+    floors: list[Floor] = field(default_factory=list)
+    raw_walls: list = field(default_factory=list)          # before openings are cut
+    walls: list = field(default_factory=list)              # after
+    wall_asset: Asset | None = None
+    openings: list[tuple[Opening, Asset | None]] = field(default_factory=list)
+    props: list[Placed] = field(default_factory=list)
+    lights: list[Light] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+
+
+LIGHT_DEFAULTS = [  # (word, radius, colour, intensity)
+    ({"fireplace", "hearth", "campfire", "bonfire", "brazier"}, 7, (255, 150, 70), 0.9),
+    ({"chandelier"}, 8, (255, 205, 140), 0.85),
+    ({"lantern", "lamp", "torch", "sconce"}, 6, (255, 196, 120), 0.8),
+    ({"candle", "candelabra", "candlestick"}, 4, (255, 176, 96), 0.7),
+]
+
+
+def _auto_light(asset: Asset):
+    w = asset.all_words
+    for words, r, c, i in LIGHT_DEFAULTS:
+        if w & words:
+            return r, c, i
+    return 5, (255, 190, 110), 0.75
+
+
+def _layer(p: Prop, asset: Asset | None, size) -> int:
+    if p.layer is not None:
+        return int(p.layer)
+    if asset is not None and asset.is_rug:
+        return 0
+    if asset is not None and asset.kind in ("overlay",):
+        return 3
+    area = size[0] * size[1]
+    return 1 if area >= 2 else 2
+
+
+def _fit(asset: Asset | None, size, rot):
+    """Return (box size w,h in squares, extra image rotation) for a prop."""
+    fp = tuple(asset.footprint) if asset is not None and asset.footprint else None
+    if size is None:
+        w, h = fp if fp else (1, 1)
+        if int(round(rot)) % 180 == 90:
+            w, h = h, w
+        return (w, h), 0.0
+    w, h = size
+    if fp and fp[0] != fp[1]:
+        want_long_x = w > h
+        img_long_x = fp[0] > fp[1]
+        r = int(round(rot)) % 180 == 90
+        if (img_long_x != r) != want_long_x and w != h:
+            return (w, h), 90.0
+    return (w, h), 0.0
+
+
+def build(scene: Scene, index: Index) -> Plan:
+    plan = Plan(scene)
+    seed = scene.seed
+    warn = plan.warnings.append
+
+    # ---------- floors ----------
+    def floor_asset(want):
+        if not want:
+            return None
+        a = index.get(want) or index.pick(want, "floor", seed=seed)
+        if a is None:
+            warn(f"No floor texture matches '{want}'; using a plain colour.")
+        return a
+
+    W, H = scene.width, scene.height
+    plan.floors.append(Floor("ground", [(0, 0), (W, 0), (W, H), (0, H)], scene.ground, floor_asset(scene.ground)))
+    for a in scene.areas:
+        plan.floors.append(Floor(a.name, a.poly, a.floor, floor_asset(a.floor), a.soft))
+    for r in scene.rooms:
+        if r.floor:
+            plan.floors.append(Floor(r.name, r.poly, r.floor, floor_asset(r.floor), 0.0, True))
+
+    # ---------- walls and openings ----------
+    raw = []
+    for r in scene.rooms:
+        if r.walls is None:
+            continue
+        for (ax, ay), (bx, by) in r.edges():
+            raw.append((ax, ay, bx, by))
+    raw += list(scene.walls)
+    plan.raw_walls = raw
+    plan.wall_asset = index.get(scene.wall_style) or index.pick(scene.wall_style, "wall", seed=seed)
+    if raw and plan.wall_asset is None:
+        warn(f"No wall art matches '{scene.wall_style}'; walls are drawn as plain stone.")
+
+    openings = [o for r in scene.rooms for o in r.openings] + list(scene.openings)
+    seen = set()
+    for o in openings:
+        key = (o.a, o.b) if o.a <= o.b else (o.b, o.a)
+        if key in seen:
+            continue                      # same door listed on both rooms
+        seen.add(key)
+        if not on_wall(o, raw):
+            warn(f"The {o.kind} from {o.a} to {o.b} is not on any wall.")
+        asset = None
+        if o.kind in ("door", "double", "secret"):
+            want = o.want or scene.door_style
+            asset = (index.get(o.file) if o.file else None) or index.pick(want, "door", seed=seed)
+        elif o.kind == "window":
+            want = o.want or scene.window_style
+            asset = (index.get(o.file) if o.file else None) or index.pick(want, "window", seed=seed)
+        plan.openings.append((o, asset))
+    plan.walls = merge_walls(raw, [o for o, _ in plan.openings if o.kind != "window"])
+
+    # ---------- props ----------
+    occupied: set[tuple[int, int]] = set()
+    door_squares: set[tuple[int, int]] = set()
+    for o, _ in plan.openings:
+        if o.kind == "window":
+            continue
+        (ax, ay), (bx, by) = o.a, o.b
+        if o.horizontal:
+            for x in range(int(min(ax, bx)), int(math.ceil(max(ax, bx)))):
+                door_squares |= {(x, int(ay)), (x, int(ay) - 1)}
+        else:
+            for y in range(int(min(ay, by)), int(math.ceil(max(ay, by)))):
+                door_squares |= {(int(ax), y), (int(ax) - 1, y)}
+
+    def squares(box):
+        x0, y0, x1, y1 = box
+        return {(x, y) for x in range(int(math.floor(x0 + 0.01)), int(math.ceil(x1 - 0.01)))
+                for y in range(int(math.floor(y0 + 0.01)), int(math.ceil(y1 - 0.01)))}
+
+    rnd = random.Random(seed)
+    chosen: dict[str, Asset | None] = {}
+
+    def choose(p: Prop, i: int):
+        if p.file:
+            a = index.get(p.file)
+            if a is None:
+                warn(f"No asset file called '{p.file}'.")
+            return a
+        key = p.want if not p.vary else f"{p.want}#{i}"
+        if key not in chosen:
+            a = index.pick(p.want, "prop", p.size, seed=seed + (i if p.vary else 0))
+            if a is None:
+                # rugs, mats and similar sometimes live with floor textures
+                a = index.pick(p.want, "floor", seed=seed)
+            if a is None:
+                warn(f"No asset matches '{p.want}'; it is shown as a labelled box.")
+            chosen[key] = a
+        return chosen[key]
+
+    for pi, p in enumerate(scene.props):
+        name = p.want or p.file
+        count = max(1, p.count)
+        boxes: list[tuple[tuple, float]] = []
+        if p.at is not None or p.centre is not None:
+            a = choose(p, 0)
+            (w, h), _ = _fit(a, p.size, p.rot)
+            if p.at is not None:
+                x, y = p.at
+            else:
+                x, y = p.centre[0] - w / 2, p.centre[1] - h / 2
+            boxes.append(((x, y, x + w, y + h), p.rot))
+        else:
+            try:
+                room = scene.room(p.room)
+            except SceneError as e:
+                warn(f"props[{pi}] ({name}): {e}")
+                continue
+            a = choose(p, 0)
+            boxes += _auto_place(room, p, a, count, occupied, door_squares, rnd, warn, name)
+        for bi, (box, rot) in enumerate(boxes):
+            a = choose(p, bi)
+            _, fit_rot = _fit(a, (box[2] - box[0], box[3] - box[1]), rot)
+            x0, y0, x1, y1 = box
+            if x0 < -0.01 or y0 < -0.01 or x1 > W + 0.01 or y1 > H + 0.01:
+                warn(f"'{name}' at {box[:2]} runs off the map edge.")
+            pl = Placed(name, a, box, rot, p.label, _layer(p, a, (x1 - x0, y1 - y0)), p.scale, p.shadow, p.flip, fit_rot)
+            if pl.layer >= 1:
+                sq = squares(box)
+                if pl.layer == 1 and sq & occupied and p.at is not None:
+                    warn(f"'{name}' at {box[:2]} overlaps another piece of furniture.")
+                if pl.layer == 1:
+                    occupied |= sq
+            plan.props.append(pl)
+            # automatic lights from candles, lanterns, fireplaces
+            if a is not None and a.emits_light and p.light is not False:
+                r, c, inten = _auto_light(a)
+                if isinstance(p.light, dict):
+                    r = float(p.light.get("radius", r)); inten = float(p.light.get("intensity", inten))
+                    if "colour" in p.light or "color" in p.light:
+                        from .scene import colour
+                        c = colour(p.light.get("colour", p.light.get("color")))
+                cx, cy = pl.centre
+                plan.lights.append(Light((cx, cy), r, c, inten, "both"))
+
+    plan.lights = list(scene.lights) + plan.lights
+    for L in plan.lights:
+        if L.room is None:
+            rm = scene.room_at(*L.at)
+            L.room = rm.name if rm and rm.walls is not None else None
+
+    # ---------- checks ----------
+    for r in scene.rooms:
+        x0, y0, x1, y1 = r.box
+        if x0 < 0 or y0 < 0 or x1 > W or y1 > H:
+            warn(f"Room '{r.name}' runs off the map ({r.box}; map is {W} x {H}).")
+    if plan.walls and scene.rooms:
+        # Every walled room should be reachable from outside or from the first room.
+        start = None
+        for y in range(H):
+            for x in range(W):
+                if scene.room_at(x + 0.5, y + 0.5) is None:
+                    start = (x, y); break
+            if start: break
+        if start is None:
+            r0 = scene.rooms[0]
+            start = (int(r0.box[0]), int(r0.box[1]))
+        reach = reachable(W, H, plan.walls, start)
+        for r in scene.rooms:
+            if r.walls is None:
+                continue
+            x0, y0, x1, y1 = r.box
+            inside = [(x, y) for x in range(int(x0), int(math.ceil(x1))) for y in range(int(y0), int(math.ceil(y1)))
+                      if r.contains(x + 0.5, y + 0.5)]
+            if inside and not any(s in reach for s in inside):
+                warn(f"Room '{r.name}' has no way in (no door or arch reaches it).")
+    return plan
+
+
+def _auto_place(room: Room, p: Prop, a, count, occupied, door_squares, rnd, warn, name):
+    """Find spots inside a room: along a wall if asked, otherwise anywhere free."""
+    (w, h), _ = _fit(a, p.size, p.rot)
+    x0, y0, x1, y1 = room.box
+    out = []
+    side = str(p.along).lower() if p.along else None
+    if side:
+        rot = {"north": 0, "south": 180, "west": 270, "east": 90}[side] + p.rot
+        if side in ("east", "west"):
+            w, h = (h, w) if (a is None or not a.footprint or a.footprint[0] >= a.footprint[1]) and p.size is None else (w, h)
+        if side in ("north", "south"):
+            span = (x0, x1); length = w
+        else:
+            span = (y0, y1); length = h
+        free = [t for t in range(int(span[0]), int(span[1] - length) + 1)]
+        def spot(t):
+            if side == "north": return (t, y0, t + w, y0 + h)
+            if side == "south": return (t, y1 - h, t + w, y1)
+            if side == "west": return (x0, t, x0 + w, t + h)
+            return (x1 - w, t, x1, t + h)
+        def ok(box):
+            sq = {(x, y) for x in range(int(box[0]), int(math.ceil(box[2]))) for y in range(int(box[1]), int(math.ceil(box[3])))}
+            return all(room.contains(x + 0.5, y + 0.5) for x, y in sq) and not (sq & occupied) and not (sq & door_squares)
+        cands = [t for t in free if ok(spot(t))]
+        if count > len(cands):
+            warn(f"Only room for {len(cands)} of {count} '{name}' along the {side} wall of {room.name}.")
+        # spread evenly
+        picks = []
+        if cands:
+            n = min(count, len(cands))
+            for k in range(n):
+                idx = round((k + 0.5) * len(cands) / n - 0.5)
+                t = cands[min(idx, len(cands) - 1)]
+                box = spot(t)
+                if ok(box):
+                    picks.append(box)
+                    occupied |= {(x, y) for x in range(int(box[0]), int(math.ceil(box[2]))) for y in range(int(box[1]), int(math.ceil(box[3])))}
+        return [(b, rot) for b in picks]
+    # anywhere free inside, kept off the walls where possible
+    spots = []
+    for y in range(int(y0), int(math.ceil(y1 - h)) + 1):
+        for x in range(int(x0), int(math.ceil(x1 - w)) + 1):
+            box = (x, y, x + w, y + h)
+            sq = {(i, j) for i in range(x, int(math.ceil(x + w))) for j in range(y, int(math.ceil(y + h)))}
+            if all(room.contains(i + 0.5, j + 0.5) for i, j in sq) and not (sq & occupied) and not (sq & door_squares):
+                inner = x > x0 and y > y0 and x + w < x1 and y + h < y1
+                spots.append((0 if inner else 1, rnd.random(), box, sq))
+    spots.sort()
+    for _, _, box, sq in spots:
+        if len(out) >= count:
+            break
+        if sq & occupied:
+            continue
+        out.append((box, p.rot + (rnd.choice([0, 90, 180, 270]) if p.rot == 0 and w == h else 0)))
+        occupied |= sq
+    if len(out) < count:
+        warn(f"Only room for {len(out)} of {count} '{name}' in {room.name}.")
+    return out
