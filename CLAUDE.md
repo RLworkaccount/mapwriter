@@ -6,6 +6,7 @@ MapWriter turns a YAML scene file plus the user's own asset folders into painted
 
 - British spelling in prose, docs and user-facing messages. Code identifiers may stay as they are (`colour` is used in the scene format; `color` is accepted too).
 - Never commit, bundle or upload third-party asset packs (Forgotten Adventures, 2-Minute Tabletop, etc.). The tool reads them in place. Test with the code-drawn starter pack (`mapwriter starter-pack`) or with lists of file names only (`tests/fa_names_sample.txt`).
+- No Forgotten Adventures images in the repo or anywhere public, not even screenshots of maps made with FA art (Robbie, 23 Nov 2026). FA is for personal use only. Public pictures use the starter art, or 2-Minute Tabletop art (CC BY-NC 4.0) with a credit line.
 - No AI-generated images anywhere in the project. Starter art is drawn in code (`src/mapwriter/testart.py`).
 - Plain, concrete writing in docs and messages.
 - Think big when proposing features (Robbie's standing rule), then cut a sensible next milestone. See ROADMAP.md.
