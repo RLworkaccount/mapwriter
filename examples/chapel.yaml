@@ -1,0 +1,83 @@
+# A small village chapel with a vestry, a stair room and a walled garden.
+# Shows rooms that share walls, an arch, a pinned rug size and notes for the GM key.
+name: Hillside Chapel
+grid: { width: 24, height: 30, px_per_square: 140 }
+seed: 7
+ground: cobblestone
+style:
+  walls: stone wall
+  doors: wood door
+  windows: wood window
+
+areas:
+  - name: garden
+    box: [2, 1, 22, 8]
+    floor: grass
+
+rooms:
+  - name: Garden wall
+    label: Garden
+    box: [2, 1, 22, 8]
+    walls: stone wall
+    arches:
+      - { wall: south, at: 7 }
+  - name: Vestry
+    box: [6, 8, 12, 13]
+    floor: walnut wood planks
+    doors:
+      - { wall: east, at: 10 }
+    windows:
+      - { wall: west, at: 10 }
+  - name: Stair room
+    box: [12, 8, 18, 13]
+    floor: grey flagstones
+    doors:
+      - { wall: south, at: 14 }
+  - name: Nave
+    box: [6, 13, 18, 26]
+    floor: grey flagstones
+    doors:
+      - { wall: south, at: 11, width: 2, kind: double }
+    windows:
+      - { wall: west, at: [16, 20] }
+      - { wall: east, at: [16, 20] }
+  - name: Porch
+    box: [9, 26, 15, 29]
+    floor: cobblestone
+    walls: none
+
+props:
+  # nave
+  - { want: blue rug, at: [11, 15], size: [2, 10], label: runner }
+  - { want: altar, at: [11, 13.5], size: [2, 1] }
+  - { want: candle, at: [10, 14] }
+  - { want: candle, at: [13, 14] }
+  - { want: pew, at: [7, 17], size: [3, 1] }
+  - { want: pew, at: [7, 19], size: [3, 1] }
+  - { want: pew, at: [7, 21], size: [3, 1] }
+  - { want: pew, at: [14, 17], size: [3, 1] }
+  - { want: pew, at: [14, 19], size: [3, 1] }
+  - { want: pew, at: [14, 21], size: [3, 1] }
+  - { want: plant, at: [6, 25] }
+  - { want: plant, at: [17, 25] }
+  # vestry
+  - { want: armchair, at: [7, 9], label: caretaker's chair }
+  - { want: small round table, at: [8, 9] }
+  - { want: bookshelf, in: Vestry, along: north, count: 1 }
+  - { want: chest, at: [7, 12] }
+  - { want: lantern, at: [10, 11] }
+  # stair room
+  - { want: crate, in: Stair room, count: 2 }
+  # garden
+  - { want: oak tree, at: [3, 2], size: [3, 3] }
+  - { want: oak tree, at: [18, 2], size: [3, 3] }
+  - { want: flowering plant, in: Garden wall, count: 6 }
+  - { want: bench, at: [10, 3], size: [3, 1] }
+
+lights:
+  - { at: [12, 22], radius: 8, colour: moon, when: night, intensity: 0.5 }
+  - { at: [12, 27.5], radius: 4, colour: lantern }
+
+notes:
+  - { at: [15, 10.5], text: "Stairs down to the undercroft (not on this map)." }
+  - { at: [12, 13.8], text: "Altar. A hidden drawer holds the chapel's spare keys." }

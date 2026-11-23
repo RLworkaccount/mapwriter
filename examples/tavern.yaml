@@ -1,0 +1,77 @@
+# A small village tavern: common room, kitchen, store room and a garden.
+# Render with:  mapwriter render examples/tavern.yaml -o out
+name: The Sleepy Badger
+grid: { width: 24, height: 18, px_per_square: 140 }
+seed: 4
+ground: grass
+style:
+  walls: stone wall
+  doors: wood door
+  windows: wood window
+
+areas:
+  - name: path
+    box: [9, 14, 12, 18]
+    floor: dirt path
+
+rooms:
+  - name: Common room
+    box: [2, 2, 16, 14]
+    floor: walnut wood planks
+    doors:
+      - { wall: south, at: 10 }
+    windows:
+      - { wall: north, at: [4, 8] }
+      - { wall: west, at: [5, 9] }
+  - name: Kitchen
+    box: [16, 2, 22, 8]
+    floor: stone tiles warm
+    doors:
+      - { wall: west, at: 4 }
+      - { wall: south, at: 18 }
+    windows:
+      - { wall: north, at: 18 }
+  - name: Store room
+    box: [16, 8, 22, 14]
+    floor: grey flagstones
+
+props:
+  # common room
+  - { want: counter, at: [11, 3], size: [4, 1], label: bar }
+  - { want: stool, at: [11, 4] }
+  - { want: stool, at: [13, 4] }
+  - { want: fireplace, at: [3, 2], size: [2, 1] }
+  - { want: red rug, at: [3, 4], size: [3, 2] }
+  - { want: armchair, at: [3, 6] }
+  - { want: armchair, at: [5, 6] }
+  - { want: big table, at: [7, 8], size: [3, 2] }
+  - { want: chair, at: [7, 7] }
+  - { want: chair, at: [9, 7] }
+  - { want: chair, at: [7, 10], rot: 180 }
+  - { want: chair, at: [9, 10], rot: 180 }
+  - { want: round table, in: Common room, count: 2 }
+  - { want: bench, in: Common room, along: south, count: 1 }
+  - { want: plant, at: [2, 12] }
+  - { want: lantern, at: [8, 5] }
+  - { want: cat, at: [5, 4], label: Biscuit the cat }
+  # kitchen
+  - { want: cauldron, at: [20, 3] }
+  - { want: table, at: [18, 5], size: [2, 1] }
+  - { want: barrel, at: [21, 6] }
+  - { want: shelf, in: Kitchen, along: north, count: 1 }
+  # store room
+  - { want: barrel, in: Store room, count: 4 }
+  - { want: crate, in: Store room, count: 3 }
+  - { want: sack, in: Store room, count: 2 }
+  - { want: chest, at: [21, 13], label: strongbox }
+  # garden
+  - { want: oak tree, at: [19, 15], size: [3, 3] }
+  - { want: oak tree, at: [0, 14], size: [2, 2] }
+
+lights:
+  - { at: [13, 3.5], radius: 5, colour: warm }
+  - { at: [19, 11], radius: 4, colour: candle }
+
+notes:
+  - { at: [21.5, 13.5], text: "Strongbox (locked, DC 12). Holds 40 gp and the deed to the inn." }
+  - { at: [5.5, 4.5], text: "Biscuit the cat. Follows anyone carrying fish." }

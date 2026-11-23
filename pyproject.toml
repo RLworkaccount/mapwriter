@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mapwriter"
+version = "0.1.0"
+description = "Battlemaps for tabletop games from your own asset packs and a plain scene file, with Foundry VTT export."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+dependencies = ["Pillow>=10", "PyYAML>=6"]
+keywords = ["battlemap", "dnd", "foundry-vtt", "tabletop", "rpg", "map"]
+classifiers = ["Programming Language :: Python :: 3", "Topic :: Games/Entertainment :: Role-Playing"]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[project.scripts]
+mapwriter = "mapwriter.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
