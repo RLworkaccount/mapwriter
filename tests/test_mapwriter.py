@@ -164,3 +164,37 @@ def test_cli_smoke(tmp_path, capsys):
     main(["index", str(tmp_path / "pack"), "-o", str(tmp_path / "i.json")])
     main(["search", "round table", "-i", str(tmp_path / "i.json")])
     assert "Table_Round" in capsys.readouterr().out
+
+
+def test_light_is_cast_against_walls():
+    from mapwriter.geometry import light_area
+    from PIL import Image, ImageDraw
+
+    def lit(area, x, y):
+        m = Image.new("L", (200, 200), 0)
+        ImageDraw.Draw(m).polygon([(px * 10, py * 10) for px, py in area], fill=255)
+        return m.getpixel((int(x * 10), int(y * 10))) > 0
+
+    wall = [(10, 0, 10, 20)]
+    area = light_area((5, 10), wall, 8)
+    assert lit(area, 8, 10) and not lit(area, 12, 10)
+    # a one-square gap in the wall lets light through in a narrow beam
+    gap = [(10, 0, 10, 9.5), (10, 10.5, 10, 20)]
+    area = light_area((5, 10), gap, 8)
+    assert lit(area, 12, 10) and not lit(area, 12, 14)
+
+
+def test_open_doors_and_windows_let_light_out(starter):
+    scene = parse({
+        "name": "Spill", "grid": {"width": 12, "height": 8},
+        "rooms": [{"name": "A", "box": [1, 1, 6, 7], "floor": "wood planks",
+                   "doors": [{"wall": "east", "at": 3, "open": True}, {"wall": "south", "at": 3}],
+                   "windows": [{"wall": "north", "at": 3}]}],
+        "lights": [{"at": [3.5, 3.5], "radius": 6}],
+    })
+    plan = build(scene, starter)
+    xs = [p[0] for p in plan.light_areas[0]]
+    ys = [p[1] for p in plan.light_areas[0]]
+    assert max(xs) > 7          # through the open east door
+    assert min(ys) < 0.5        # through the north window
+    assert max(ys) <= 7.01      # the closed south door blocks
