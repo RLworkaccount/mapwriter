@@ -4,10 +4,10 @@ __pycache__/
 build/
 dist/
 .venv/
-out/
-starter/
+/out/
+/starter/
 mapwriter-index.json
 *.dd2vtt
 # Never commit third-party asset packs
-assets/
-packs/
+/assets/
+/packs/
