@@ -81,6 +81,13 @@ def test_scan_reads_sizes_in_threads(tmp_path):
     assert assets["Crate_07.png"].footprint == [1, 2]
     assert assets["broken.png"].px is None
     assert all(a.px is None for a in scan(tmp_path, read_sizes=False))
+def test_plain_furniture_beats_arrangements():
+    names = ["Clutter/Table_Arrangements/Table_Arrangement_A89_3x2.webp",
+             "Furniture/Tables/Table_Rectangle_Wood_Dark_B_3x2.webp"]
+    idx = Index([describe(n, "FA", "/fa") for n in names])
+    assert "Rectangle" in idx.pick("big table", size=(3, 2)).rel
+    assert "Arrangement" in idx.pick("table arrangement").rel
+    assert idx.pick("sofa") is None
 
 
 # ------------------------------------------------------------------ scene

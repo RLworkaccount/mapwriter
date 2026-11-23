@@ -18,7 +18,7 @@ from .vocab import expand, LIGHT_WORDS, RUG_WORDS
 PACK_MANIFEST = "mapwriter-pack.yaml"
 DEFAULT_PPSQ = 200
 SIZE_WORDS = {"big": 1, "large": 1, "long": 1, "huge": 1, "great": 1, "small": -1, "little": -1, "tiny": -1}
-PART_WORDS = {"adornment", "part", "broken", "piece", "overlay", "top", "base", "covered", "arranged", "misc",
+PART_WORDS = {"adornment", "part", "broken", "piece", "overlay", "top", "base", "covered", "arranged", "arrangement", "misc",
               "connector", "corner", "joint", "ending", "shadow"}          # Forgotten Adventures, 2-Minute Tabletop and most packs paint 200 px per 5 ft square
 
 
@@ -133,9 +133,28 @@ class Index:
         self._reindex()
 
     def _reindex(self):
+        """Group assets by kind and build word lookups, so a search only scores assets
+        that share its main noun (big packs have well over 100,000 images)."""
         self._by_kind = {}
+        self._words: dict[int, tuple[set[str], set[str]]] = {}
+        self._postings: dict[str | None, dict[str, list[Asset]]] = {None: {}}
         for a in self.assets:
             self._by_kind.setdefault(a.kind, []).append(a)
+            aw = a.all_words
+            nw = set(naming.words(os.path.basename(a.rel))) | set(a.extra_tags)
+            self._words[id(a)] = (aw, nw)
+            by_kind = self._postings.setdefault(a.kind, {})
+            for w in aw:
+                by_kind.setdefault(w, []).append(a)
+                self._postings[None].setdefault(w, []).append(a)
+
+    def _candidates(self, kind: str | None, head_opts: set[str]) -> list[Asset]:
+        postings = self._postings.get(kind, {})
+        seen: dict[int, Asset] = {}
+        for w in head_opts:
+            for a in postings.get(w, ()):
+                seen[id(a)] = a
+        return list(seen.values())
 
     # ---------- files ----------
     @classmethod
@@ -194,14 +213,10 @@ class Index:
         head = ws[-1]
         head_opts = expand(head)
         mods = [(w, expand(w)) for w in ws[:-1]]
-        pool = self._by_kind.get(kind, []) if kind else self.assets
         asked = set(ws)
         scored = []
-        for a in pool:
-            aw = a.all_words
-            name_words = set(naming.words(os.path.basename(a.rel))) | set(a.extra_tags)
-            if not (head_opts & aw):
-                continue
+        for a in self._candidates(kind, head_opts):
+            aw, name_words = self._words[id(a)]
             s = 10.0 if head in aw else 7.0
             if head_opts & name_words:
                 s += 3
