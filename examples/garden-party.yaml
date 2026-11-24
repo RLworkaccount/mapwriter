@@ -1,0 +1,77 @@
+# An evening garden party behind a manor: lawn, flower beds, an ornamental pond,
+# a summer house, and tables lit by lanterns. Shows v0.2 outdoor features with
+# rooms and lights. Render with:  mapwriter render examples/garden-party.yaml -o out
+name: Garden Party at Thornbury
+grid: { width: 24, height: 18, px_per_square: 140 }
+seed: 11
+ground: grass
+
+areas:
+  - name: terrace
+    box: [0, 0, 24, 3]
+    floor: grey flagstones
+    soft: 0.05
+  - name: east bed
+    shape: [[19, 5], [23, 5], [23, 16], [20, 16]]
+    floor: mud
+    rough: 0.2
+    smooth: true
+  - name: west bed
+    shape: [[1, 5], [4, 5], [3, 12], [1, 12]]
+    floor: mud
+    rough: 0.2
+    smooth: true
+  - name: hedge line
+    box: [0, 17, 24, 18]
+    floor: grass
+
+paths:
+  - name: garden walk
+    points: [[12, 3], [12, 6], [10, 9], [12, 12], [15, 14], [16, 17]]
+    width: 1.5
+    rough: 0.1
+    floor: dirt path
+
+water:
+  - name: lily pond
+    circle: [15.5, 7.5, 2]
+    rough: 0.2
+    bank: { floor: grey flagstones, width: 0.4 }
+
+rooms:
+  - name: Summer house
+    box: [3, 13, 8, 17]
+    floor: light wood planks
+    doors:
+      - { wall: north, at: 5, open: true }
+    windows:
+      - { wall: east, at: 14 }
+
+scatter:
+  - { want: flowers, in: east bed, density: 0.6, gap: -0.2, label: roses }
+  - { want: flowers, in: west bed, density: 0.6, gap: -0.2 }
+  - { want: bush, in: hedge line, density: 1.4, gap: -0.35, turn: any, avoid: none }
+  - { want: oak tree, count: 2, gap: -0.5, avoid: [terrace, east bed, west bed] }
+  - { want: rock, in: lily pond bank, count: 2, scale: [0.6, 0.8] }
+
+props:
+  - { want: big table, at: [7, 5], size: [3, 2], label: buffet }
+  - { want: round table, at: [6, 9], size: [2, 2] }
+  - { want: chair, at: [5, 9], rot: 270 }
+  - { want: chair, at: [8, 10], rot: 90 }
+  - { want: round table, at: [16, 11], size: [2, 2] }
+  - { want: chair, at: [16, 10] }
+  - { want: chair, at: [17, 13], rot: 180 }
+  - { want: bench, at: [3, 15], size: [3, 1], rot: 180 }
+  - { want: lantern, at: [8, 7] }
+  - { want: lantern, at: [7, 11] }
+  - { want: lantern, at: [17, 12] }
+  - { want: lantern, at: [12, 2] }
+  - { want: candle, at: [5, 14] }
+
+lighting:
+  night: { ambient: [70, 78, 120] }
+
+notes:
+  - { at: [8.5, 6], text: "The punch is laced with a sleeping draught." }
+  - { at: [15.5, 7.5], text: "A silver ring glints among the lily pads (DC 13 Perception)." }

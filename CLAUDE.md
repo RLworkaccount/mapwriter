@@ -18,6 +18,7 @@ src/mapwriter/
   assets/naming.py   file path -> words, footprint (WxH), kind
   assets/vocab.py    synonyms, light-source and rug words
   assets/index.py    Asset, Index (scan, save/load, search, pick, tags.yaml)
+  assets/packcheck.py  pack-check: guess px per square, flag vague names, write mapwriter-pack.yaml
   scene.py           YAML -> Scene dataclasses, with friendly SceneError messages
   geometry.py        merge walls, cut openings, reachability flood fill, outdoor Regions (rough outlines, path strips)
   plan.py            Scene + Index -> Plan (chosen art, placed props, walls, lights, warnings)
@@ -29,7 +30,7 @@ src/mapwriter/
   build.py           high-level steps used by the CLI
   cli.py             `mapwriter` command
   testart.py         starter pack drawn in code
-examples/            tavern.yaml, chapel.yaml, market.yaml (must render with the starter pack alone)
+examples/            tavern.yaml, chapel.yaml, market.yaml, garden-party.yaml (must render with the starter pack alone)
 docs/                scene format, asset packs, describing maps to an AI
 tests/               pytest; fast (about 1 s)
 ```

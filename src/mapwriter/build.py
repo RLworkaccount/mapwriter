@@ -58,4 +58,15 @@ def render_all(plan: Plan, out_dir, image_format="webp", quality=88, uvtt=True) 
     first = images[plan.scene.versions[0]]
     k = out / f"{name}-key.jpg"; gm_key(plan, first).save(k, quality=88); written["key"] = k
     c = out / f"{name}-check.jpg"; check_overlay(plan, first).save(c, quality=85); written["check"] = c
+    lines = credits(plan)
+    if lines:
+        t = out / f"{name}-credits.txt"
+        t.write_text("\n".join(lines) + "\n", encoding="utf-8"); written["credits"] = t
     return written
+
+
+def credits(plan: Plan) -> list[str]:
+    """Credit lines of every pack whose art appears in the map (for licences such as CC BY-NC)."""
+    used = [f.asset for f in plan.floors] + [p.asset for p in plan.props] + [a for _, a in plan.openings]
+    used += [plan.wall_asset] + [j[2] for j in plan.wall_joints]
+    return list(dict.fromkeys(a.credit for a in used if a is not None and a.credit))

@@ -96,7 +96,7 @@ See [docs/asset-packs.md](docs/asset-packs.md) for how packs are read, how to ad
 
 ## Roadmap
 
-v0.1 covers indoor scenes. Next up: outdoor areas and scatter (v0.2), describe and edit-in-words commands (v0.3), picture-based tagging for any pack (v0.4), whole-place generators (v0.5), full Foundry scenes (v0.6), and a web editor plus an MCP server (v0.7). Details in [ROADMAP.md](ROADMAP.md).
+v0.1 covers indoor scenes. v0.2 adds outdoor ground: rough soft-edged areas, paths along a line, ponds and rivers with banks, and scatter rules for trees, rocks, flowers and piles of clutter (see `examples/market.yaml` and `examples/garden-party.yaml`), plus `mapwriter pack-check` for new packs. Next up: describe and edit-in-words commands (v0.3), picture-based tagging for any pack (v0.4), whole-place generators (v0.5), full Foundry scenes (v0.6), and a web editor plus an MCP server (v0.7). Details in [ROADMAP.md](ROADMAP.md).
 
 ## Licence
 

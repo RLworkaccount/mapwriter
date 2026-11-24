@@ -348,3 +348,26 @@ def test_scatter_and_clumps(starter):
         parse({**data, "scatter": [{"want": "rock"}]})
     plan = build(parse({**data, "scatter": [{"want": "rock", "in": "nowhere", "count": 2}]}), starter)
     assert any("nowhere" in w for w in plan.warnings)
+
+
+def test_pack_check_and_credits(tmp_path, starter):
+    from PIL import Image
+    from mapwriter.assets.packcheck import check_pack
+    from mapwriter.build import credits
+    pack = tmp_path / "2MT Garden"
+    (pack / "Props").mkdir(parents=True)
+    for name, size in (("Barrel 1.png", (256, 256)), ("Crate (Small) 2.png", (250, 262)),
+                       ("Cart 3x2.png", (768, 512)), ("01.png", (256, 256))):
+        Image.new("RGBA", size).save(pack / "Props" / name)
+    r = check_pack(pack, write=True, credit="2-Minute Tabletop, CC BY-NC 4.0")
+    assert r["ppsq"] == 256 and "Props/01.png" in r["vague"]
+    text = (pack / "mapwriter-pack.yaml").read_text()
+    assert "px_per_square: 256" in text and "CC BY-NC" in text
+    idx = Index.build([str(pack)])
+    cart = idx.get("Cart 3x2.png")
+    assert cart.footprint == [3, 2] and cart.credit == "2-Minute Tabletop, CC BY-NC 4.0"
+    assert idx.get("Barrel 1.png").footprint == [1, 1]
+    scene = parse({"name": "x", "grid": {"width": 6, "height": 6}, "ground": "grass",
+                   "props": [{"want": "cart", "at": [1, 1]}]})
+    mixed = Index(starter.assets + idx.assets)
+    assert credits(build(scene, mixed)) == ["2-Minute Tabletop, CC BY-NC 4.0"]
