@@ -1,5 +1,7 @@
 # MapWriter
 
+MapWriter is a free, open-source (MIT) battlemap generator for Foundry VTT and other virtual tabletops. You describe a map in plain words, or ask an AI assistant such as Claude to describe it for you, and MapWriter paints it from the asset packs you already own and exports a `.dd2vtt` file with walls, doors and lights.
+
 **Battlemaps from the asset packs you already own, described in plain words.**
 
 You write a short scene file (or ask an AI assistant to write it for you) that says what rooms, doors and furniture you want. MapWriter finds matching art in your own asset folders, checks the layout, and paints a finished map in day and night versions. It also writes a Foundry VTT file with the walls, doors, windows and lights already placed.
@@ -86,7 +88,29 @@ The full format is in [docs/scene-format.md](docs/scene-format.md).
 
 ## Describing a map to an AI
 
-MapWriter is built so an assistant such as Claude can write the scene file from a plain description, run `check` and `sketch`, read the warnings, and fix the layout before painting. [docs/describe-with-ai.md](docs/describe-with-ai.md) has a prompt you can copy.
+MapWriter is built so an assistant such as Claude can write the scene file from a plain description, run `check` and `sketch`, read the warnings, and fix the layout before painting. Copy this prompt, paste it into Claude (or another assistant that can run commands), and replace the last line with your map:
+
+```text
+I use MapWriter (https://github.com/RLworkaccount/mapwriter) to make battlemaps.
+Please install it if needed (pip install git+https://github.com/RLworkaccount/mapwriter),
+then write a scene file for the map below, following docs/scene-format.md in that repo.
+
+Rules:
+- Grid squares are 5 ft. Make rooms a believable size: a bedroom is about 3 x 4 squares,
+  a tavern common room 10 x 8 or more.
+- Every walled room needs a door or arch, and doors should not open straight into furniture.
+- Put furniture where people would use it: chairs around tables, beds against walls,
+  shelves along walls (along:).
+- Use want: words that are likely to match asset file names. Run mapwriter search "words"
+  to see what my packs have.
+- Add notes: for anything the GM needs to know, and label: for important props.
+- Run mapwriter check and mapwriter sketch, fix anything they report, and show me the
+  sketch before running mapwriter render.
+
+The map: (describe it here)
+```
+
+[docs/describe-with-ai.md](docs/describe-with-ai.md) explains the loop and has more tips.
 
 ## Asset packs
 
