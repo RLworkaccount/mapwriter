@@ -272,6 +272,11 @@ def build(scene: Scene, index: Index) -> Plan:
                 cx, cy = pl.centre
                 plan.lights.append(Light((cx, cy), r, c, inten, "both"))
 
+    # ---------- scatter ----------
+    taken: list[tuple[float, float, float]] = []       # (x, y, radius) of scattered items so far
+    for si, rule in enumerate(scene.scatter):
+        plan.props += _scatter(plan, rule, si, index, occupied | door_squares, taken, warn)
+
     plan.lights = list(scene.lights) + plan.lights
     for L in plan.lights:
         plan.light_areas.append(_light_area(scene, L, plan.light_walls))
@@ -317,6 +322,121 @@ def _light_area(scene: Scene, L: Light, blockers) -> list:
             d = max(1e-6, ((cx - x) ** 2 + (cy - y) ** 2) ** 0.5)
             x, y = x + 0.15 * (cx - x) / d, y + 0.15 * (cy - y) / d
     return light_area((x, y), blockers, L.radius)
+TALL_WORDS = {"tree", "oak", "pine", "willow", "canopy"}
+
+
+def _region_named(plan: Plan, name: str):
+    """A floor (area, path, water) or room by name, as a Region."""
+    for f in plan.floors[1:]:
+        if f.name.lower() == name.lower():
+            return f.region
+    for r in plan.scene.rooms:
+        if r.name.lower() == name.lower():
+            return Region(poly=r.poly)
+    return None
+
+
+def _scatter(plan: Plan, rule, si: int, index: Index, blocked_squares, taken, warn) -> list:
+    """Place copies of ``rule.want`` inside a region, in clumps if asked, keeping off
+    paths, water, buildings, furniture and each other."""
+    sc = plan.scene
+    W, H = sc.width, sc.height
+    rnd = random.Random(f"{sc.seed}:scatter:{si}:{rule.want}")
+    name = rule.want
+    if rule.within.lower() == "map":
+        region = Region(poly=[(0, 0), (W, 0), (W, H), (0, H)])
+    else:
+        region = _region_named(plan, rule.within)
+        if region is None:
+            warn(f"scatter '{name}': nothing called '{rule.within}' to scatter in.")
+            return []
+    inside_room = any(r.name.lower() == rule.within.lower() for r in sc.rooms)
+    # Keep off paths, water and walled rooms by default, plus anything named in avoid.
+    avoid = []
+    if not (rule.avoid and any(str(a).lower() == "none" for a in rule.avoid)):
+        # On open ground, keep off every path, area and pond; inside a named place, only off paths and water.
+        on_map = rule.within.lower() == "map"
+        avoid += [f.region for f in plan.floors[1:] if f.region is not region and not f.is_room
+                  and (on_map or f.water or f.poly is None)]
+        if not inside_room:
+            avoid += [Region(poly=r.poly) for r in sc.rooms if r.walls is not None]
+    for a in rule.avoid or []:
+        if str(a).lower() != "none":
+            g = _region_named(plan, str(a))
+            if g is None:
+                warn(f"scatter '{name}': nothing called '{a}' to keep off.")
+            else:
+                avoid.append(g)
+
+    x0, y0, x1, y1 = region.bbox()
+    x0, y0, x1, y1 = max(0, x0), max(0, y0), min(W, x1), min(H, y1)
+    if rule.count is not None:
+        n = max(0, rule.count)
+    else:
+        cells = sum(1 for i in range(int(x0 * 2), int(math.ceil(x1 * 2))) for j in range(int(y0 * 2), int(math.ceil(y1 * 2)))
+                    if region.contains(i / 2 + 0.25, j / 2 + 0.25))
+        n = int(round(rule.density * cells / 4))
+
+    def choose(i):
+        a = index.pick(name, "prop", rule.size, seed=sc.seed + (i if rule.vary else 0))
+        if a is None:
+            a = index.pick(name, "prop", rule.size, seed=sc.seed)
+        return a
+
+    def free(x, y, r):
+        if not (0 <= x <= W and 0 <= y <= H) or not region.contains(x, y):
+            return False
+        edge = [(x, y)] + [(x + r * 0.7 * dx, y + r * 0.7 * dy) for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1))]
+        if any(g.contains(px, py) for g in avoid for px, py in edge):
+            return False
+        if (int(x), int(y)) in blocked_squares:
+            return False
+        return all(math.hypot(x - tx, y - ty) >= r + tr + rule.gap for tx, ty, tr in taken)
+
+    centres = []
+    if rule.cluster > 1:
+        k = max(1, int(math.ceil(n / rule.cluster)))
+        for _ in range(k * 40):
+            if len(centres) >= k:
+                break
+            cx, cy = rnd.uniform(x0, x1), rnd.uniform(y0, y1)
+            if free(cx, cy, 0) and all(math.hypot(cx - a, cy - b) > rule.spread * 1.5 for a, b in centres):
+                centres.append((cx, cy))
+        if not centres:
+            warn(f"scatter '{name}': no free spot in '{rule.within}'.")
+            return []
+
+    out, art = [], None
+    for i in range(n):
+        a = choose(i) if (rule.vary or art is None) else art
+        art = art or a
+        fw, fh = rule.size or (tuple(a.footprint) if a is not None and a.footprint else (1, 1))
+        k = rnd.uniform(*rule.scale)
+        r = 0.5 * min(fw, fh) * k * 0.9
+        for t in range(80):
+            if centres:
+                cx, cy = centres[(i + t // 12) % len(centres)]     # a full clump hands on to the next
+                x, y = rnd.gauss(cx, rule.spread / 2), rnd.gauss(cy, rule.spread / 2)
+            else:
+                x, y = rnd.uniform(x0, x1), rnd.uniform(y0, y1)
+            if free(x, y, r):
+                break
+        else:
+            continue
+        taken.append((x, y, r))
+        rot = {"any": rnd.uniform(0, 360), "square": rnd.choice([0, 90, 180, 270]), "none": 0.0}[rule.turn]
+        if a is not None:
+            layer = int(rule.layer) if rule.layer is not None else (4 if a.all_words & TALL_WORDS else 1)
+        else:
+            layer = int(rule.layer or 1)
+        out.append(Placed(name, a, (x - fw / 2, y - fh / 2, x + fw / 2, y + fh / 2), rot, rule.label, layer, k))
+    if len(out) < n:
+        warn(f"Only room for {len(out)} of {n} '{name}' in {rule.within}.")
+    if out and all(p.asset is None for p in out):
+        warn(f"No asset matches '{name}'; it is shown as a labelled box.")
+    return out
+
+
 # Forgotten Adventures sets ship joint pieces next to each *_Straight_Path strip.
 JOINT_NAMES = {"corner": "Corner_A_1x1", "tee": "Joint_B_1x1", "cross": "Joint_A_1x1"}
 

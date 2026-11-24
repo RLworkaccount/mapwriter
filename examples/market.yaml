@@ -1,5 +1,5 @@
 # A small market square where two roads meet, with a muddy patch and a lawn.
-# Shows v0.2 outdoor ground: rough soft-edged areas, circles, paths along a line, a pond and a stream.
+# Shows v0.2 outdoor ground: rough soft-edged areas, circles, paths along a line, a pond and a stream, and scattered trees, bushes, flowers, rocks and a pile of crates.
 # Render with:  mapwriter render examples/market.yaml -o out
 name: Crossroads Market
 grid: { width: 26, height: 20, px_per_square: 140 }
@@ -43,14 +43,19 @@ paths:
     rough: 0.15
     floor: dirt path
 
+scatter:
+  - { want: oak tree, in: map, count: 6, cluster: 3.5, spread: 3, gap: -0.6 }
+  - { want: bush, in: map, density: 0.025, cluster: 3, spread: 1.2 }
+  - { want: flowers, in: map, density: 0.015, cluster: 4, spread: 1 }
+  - { want: rock, in: duck pond bank, count: 3, gap: 0 }
+  - { want: crate, in: square, count: 5, cluster: 5, spread: 0.8, gap: -0.05, scale: [0.85, 1], label: crates }
+
 props:
   - { want: market stall, at: [9, 6], label: fishmonger }
   - { want: blue market stall, at: [14, 6], label: cloth }
   - { want: market stall, at: [9, 12], rot: 180, label: baker }
   - { want: barrel, at: [12, 11] }
   - { want: crate, at: [13, 11] }
-  - { want: oak tree, at: [20, 13], size: [3, 3] }
-  - { want: oak tree, at: [6, 2], size: [2, 2] }
   - { want: lantern, at: [13, 9] }
 
 notes:

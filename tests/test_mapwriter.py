@@ -320,3 +320,31 @@ def test_resample_spacing():
     pts = resample([(0, 0), (0.01, 0), (0.02, 0), (4, 0)], 0.5, False)
     gaps = [b[0] - a[0] for a, b in zip(pts, pts[1:])]
     assert len(pts) == 9 and max(gaps) - min(gaps) < 1e-9
+
+
+def test_scatter_and_clumps(starter):
+    data = json.loads(json.dumps(OUTDOOR))
+    data["rooms"] = [{"name": "Store", "box": [11, 0, 16, 4], "doors": [{"wall": "south", "at": 13}]}]
+    data["scatter"] = [{"want": "bush", "count": 12, "cluster": 4, "spread": 1.5},
+                       {"want": "crate", "in": "Store", "count": 5, "cluster": 5, "spread": 0.8, "gap": -0.05},
+                       {"want": "rock", "in": "pond lawn", "density": 0.3, "turn": "square"}]
+    plan = build(parse(data), starter)
+    by = {}
+    for p in plan.props:
+        by.setdefault(p.want, []).append(p)
+    lane = next(f.region for f in plan.floors if f.name == "lane")
+    store = parse(data).rooms[0]
+    lawn = next(f.region for f in plan.floors if f.name == "pond lawn")
+    assert len(by["bush"]) == 12
+    for p in by["bush"]:                     # open ground: off the lane, the lawn and the store
+        assert not lane.contains(*p.centre) and not lawn.contains(*p.centre) and not store.contains(*p.centre)
+    assert len(by["crate"]) == 5 and all(store.contains(*p.centre) for p in by["crate"])
+    xs = [p.centre[0] for p in by["crate"]]
+    assert max(xs) - min(xs) < 4             # one pile, not spread round the room
+    assert by["rock"] and all(lawn.contains(*p.centre) and p.rot % 90 == 0 for p in by["rock"])
+    again = build(parse(data), starter)
+    assert [p.box for p in again.props] == [p.box for p in plan.props]
+    with pytest.raises(SceneError, match="count"):
+        parse({**data, "scatter": [{"want": "rock"}]})
+    plan = build(parse({**data, "scatter": [{"want": "rock", "in": "nowhere", "count": 2}]}), starter)
+    assert any("nowhere" in w for w in plan.warnings)

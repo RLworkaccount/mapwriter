@@ -145,6 +145,26 @@ class Water:
 
 
 @dataclass
+class Scatter:
+    """Many copies of something spread over a place: trees in a wood, rocks on a slope,
+    a pile of crates in a store room."""
+    want: str
+    within: str = "map"            # an area, path, water or room name, or "map"
+    count: int | None = None
+    density: float | None = None   # items per square, used when count is not given
+    cluster: float = 1.0           # average items per clump (1 = spread out evenly)
+    spread: float = 1.5            # how far a clump reaches from its middle, squares
+    gap: float = 0.1               # space kept between items, squares (negative lets them overlap)
+    turn: str = "any"              # any, square (quarter turns) or none
+    scale: tuple[float, float] = (0.9, 1.1)
+    size: tuple[float, float] | None = None
+    vary: bool = True              # different art for each copy, where the pack has it
+    avoid: list[str] | None = None # extra names to keep off; "none" clears the defaults
+    layer: int | None = None
+    label: str | None = None
+
+
+@dataclass
 class Light:
     at: tuple[float, float]
     radius: float = 6.0
@@ -175,6 +195,7 @@ class Scene:
     areas: list[Area] = field(default_factory=list)
     paths: list[ScenePath] = field(default_factory=list)
     water: list[Water] = field(default_factory=list)
+    scatter: list[Scatter] = field(default_factory=list)
     walls: list[tuple[float, float, float, float]] = field(default_factory=list)
     openings: list[Opening] = field(default_factory=list)
     props: list[Prop] = field(default_factory=list)
@@ -398,6 +419,31 @@ def parse(data: dict, source: str | None = None) -> Scene:
             raise SceneError(f"{what} ({pr.want or pr.file}): give at: [x, y], centre: [x, y], or in: <room>")
         if pr.along and str(pr.along).lower() not in SIDES:
             raise SceneError(f"{what}: along should be one of {', '.join(SIDES)}")
+
+    for i, sp in enumerate(data.get("scatter") or []):
+        what = f"scatter[{i}]"
+        if not isinstance(sp, dict) or not sp.get("want"):
+            raise SceneError(f"{what}: each scatter rule needs want: (words), e.g. want: oak tree")
+        what += f" ({sp['want']})"
+        sc_ = sp.get("scale", (0.9, 1.1))
+        if isinstance(sc_, (int, float)):
+            sc_ = (float(sc_), float(sc_))
+        turn = str(sp.get("turn", "any")).lower()
+        if turn not in ("any", "square", "none"):
+            raise SceneError(f"{what}: turn should be any, square or none")
+        avoid = sp.get("avoid")
+        if isinstance(avoid, str):
+            avoid = [avoid]
+        rule = Scatter(str(sp["want"]), str(sp.get("in", "map")),
+                       int(sp["count"]) if "count" in sp else None,
+                       float(sp["density"]) if "density" in sp else None,
+                       float(sp.get("cluster", 1)), float(sp.get("spread", 1.5)), float(sp.get("gap", 0.1)),
+                       turn, (float(sc_[0]), float(sc_[1])),
+                       _pt(sp["size"], what + " size") if "size" in sp else None,
+                       bool(sp.get("vary", True)), avoid, sp.get("layer"), sp.get("label"))
+        if rule.count is None and rule.density is None:
+            raise SceneError(f"{what}: give count: (how many) or density: (how many per square)")
+        sc.scatter.append(rule)
 
     for i, l in enumerate(data.get("lights") or []):
         what = f"lights[{i}]"
