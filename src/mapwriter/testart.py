@@ -97,6 +97,34 @@ def grass(colour=(96, 132, 66), seed=0, size=2):
     return im
 
 
+def water(colour=(58, 104, 128), seed=0, size=2):
+    rnd = random.Random(seed)
+    W = H = size * S
+    im = Image.new("RGB", (W, H), colour)
+    d = ImageDraw.Draw(im)
+    for _ in range(160):
+        x, y = rnd.uniform(0, W), rnd.uniform(0, H)
+        L = rnd.uniform(20, 60); c = _shade(colour, rnd.uniform(0.9, 1.25))
+        for ox in (0, -W, W):
+            for oy in (0, -H, H):
+                d.arc([x + ox - L, y + oy - L / 4, x + ox + L, y + oy + L / 4], 200, 340, fill=c, width=2)
+    return im.filter(ImageFilter.SMOOTH)
+
+
+def mud(colour=(104, 84, 60), seed=0, size=2):
+    rnd = random.Random(seed)
+    W = H = size * S
+    im = Image.new("RGB", (W, H), colour)
+    d = ImageDraw.Draw(im)
+    for _ in range(500):
+        x, y = rnd.uniform(0, W), rnd.uniform(0, H); r = rnd.uniform(4, 18)
+        c = _shade(colour, rnd.uniform(0.8, 1.15))
+        for ox in (0, -W, W):
+            for oy in (0, -H, H):
+                d.ellipse([x + ox - r, y + oy - r * .7, x + ox + r, y + oy + r * .7], fill=c)
+    return im.filter(ImageFilter.GaussianBlur(2))
+
+
 def rug_texture(base, trim, seed=0):
     W = H = S
     im = Image.new("RGB", (W, H), base)
@@ -257,6 +285,30 @@ def tree(leaf=(64, 112, 58), size=2, seed=0):
     return _done(im)
 
 
+def rock(size=1, colour=(128, 124, 118), seed=0):
+    rnd = random.Random(seed)
+    im = _new(size, size); d = ImageDraw.Draw(im); s = S * SS * size
+    n = 9
+    pts = [(s / 2 + math.cos(2 * math.pi * k / n) * s * rnd.uniform(.28, .42),
+            s / 2 + math.sin(2 * math.pi * k / n) * s * rnd.uniform(.28, .42)) for k in range(n)]
+    d.polygon(pts, fill=colour + (255,), outline=_shade(colour, .5) + (255,), width=8 * size)
+    d.polygon([(x * .55 + s * .2, y * .55 + s * .16) for x, y in pts], fill=_shade(colour, 1.18) + (255,))
+    return _done(im)
+
+
+def bush(leaf=(74, 120, 60), seed=0, flowers=None):
+    rnd = random.Random(seed)
+    im = _new(1, 1); d = ImageDraw.Draw(im); s = S * SS
+    for k in range(16):
+        a = rnd.uniform(0, 2 * math.pi); r = s * rnd.uniform(0, .22)
+        x, y = s / 2 + math.cos(a) * r, s / 2 + math.sin(a) * r; rr = s * rnd.uniform(.1, .16)
+        d.ellipse([x - rr, y - rr, x + rr, y + rr], fill=_shade(leaf, rnd.uniform(.75, 1.2)) + (255,))
+    for _ in range(14 if flowers else 0):
+        x, y = rnd.uniform(s * .25, s * .75), rnd.uniform(s * .25, s * .75); rr = s * .035
+        d.ellipse([x - rr, y - rr, x + rr, y + rr], fill=flowers + (255,))
+    return _done(im)
+
+
 def candle():
     im = _new(1, 1); d = ImageDraw.Draw(im); s = S * SS
     d.ellipse([s * .38, s * .38, s * .62, s * .62], fill=(238, 228, 200, 255), outline=(150, 130, 100, 255), width=6)
@@ -348,6 +400,8 @@ def build_pack(out_dir: str | Path) -> int:
     save("Textures/Stone_Floors/Stone_Tiles_Warm.jpg", flagstones((160, 138, 112), 2))
     save("Textures/Stone_Floors/Cobblestone_Gray.jpg", flagstones((122, 118, 112), 3, cobble=True))
     save("Textures/Grass/Grass_Green.jpg", grass())
+    save("Textures/Water/Water_Pond_Blue.jpg", water())
+    save("Textures/Dirt/Mud_Brown.jpg", mud())
     save("Textures/Dirt/Dirt_Path.jpg", flagstones((126, 100, 70), 4, cobble=True))
     save("Textures/Rugs/Rug_Texture_Red.jpg", rug_texture((140, 44, 48), (220, 180, 90)))
     save("Textures/Rugs/Rug_Texture_Blue.jpg", rug_texture((52, 70, 130), (220, 200, 140)))
@@ -387,6 +441,13 @@ def build_pack(out_dir: str | Path) -> int:
     N = "Nature"
     save(f"{N}/Plants/Plant_Potted_Green_1x1.png", plant(seed=1))
     save(f"{N}/Plants/Plant_Potted_Flowering_1x1.png", plant((150, 90, 150), seed=2))
+    save(f"{N}/Rocks/Rock_Gray_1x1.png", rock(1, seed=1))
+    save(f"{N}/Rocks/Rock_Gray_2x2.png", rock(2, seed=2))
+    save(f"{N}/Rocks/Rock_Mossy_1x1.png", rock(1, (110, 122, 96), seed=3))
+    save(f"{N}/Bushes/Bush_Green_1x1.png", bush(seed=1))
+    save(f"{N}/Bushes/Bush_Green_Dark_1x1.png", bush((56, 96, 52), seed=2))
+    save(f"{N}/Flowers/Flowers_Red_1x1.png", bush((96, 140, 70), seed=3, flowers=(210, 60, 60)))
+    save(f"{N}/Flowers/Flowers_Yellow_1x1.png", bush((96, 140, 70), seed=4, flowers=(240, 210, 70)))
     save(f"{N}/Trees/Tree_Oak_Green_2x2.png", tree(seed=1))
     save(f"{N}/Trees/Tree_Oak_Green_3x3.png", tree(size=3, seed=2))
     save("Market/Stalls/Market_Stall_Red_3x2.png", stall(3))

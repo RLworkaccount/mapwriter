@@ -13,6 +13,8 @@ A scene file is YAML. All positions and sizes are in grid squares (5 ft each). `
 | `style` | `{ walls, doors, windows }`: words for the default wall, door and window art | `stone wall`, `wood door`, `wood window` |
 | `areas` | Floors without walls (lawns, yards, mud, squares) | none |
 | `paths` | Strips of floor along a line (roads, tracks, footpaths) | none |
+| `water` | Ponds, lakes, rivers and streams, with banks | none |
+| `scatter` | Many copies of something spread over a place (trees, rocks, flowers, a pile of crates) | none |
 | `rooms` | Walled spaces with floors, doors and windows | none |
 | `walls` | Extra free-standing walls | none |
 | `doors`, `windows`, `arches` | Openings not tied to a room | none |
@@ -73,7 +75,31 @@ paths:
 | `rough` | How much the width wanders, in squares | `0.25` |
 | `soft` | Edge feather, in squares | `0.3` |
 
-Paths are painted first, then areas, then rooms, so a road runs under the square or yard it leads into.
+Paths are painted first, then areas, then water, then rooms, so a road runs under the square or yard it leads into.
+
+## Water
+
+```yaml
+water:
+  - name: duck pond
+    circle: [4, 6, 2]             # or box: / shape:, like an area
+  - name: stream
+    points: [[26, 15], [22, 17.5], [17, 17], [13, 19]]   # or a line, like a path
+    width: 1.5
+    bank: { floor: mud, width: 0.5 }
+```
+
+| Key | Meaning | Default |
+|---|---|---|
+| `circle`, `box`, `shape` | A pond or lake outline, as for areas | |
+| `points`, `width`, `curve` | A river or stream along a line, as for paths | width `2`, curve `true` |
+| `floor` | Words for the water texture | `water` |
+| `bank` | `{ floor, width }` for the strip of ground round the water, just floor words, or `false` for no bank | `mud`, `0.6` squares |
+| `rough` | How far the edge wanders, in squares | `0.3` |
+| `smooth` | Round off the corners of a pond outline | `true` |
+| `soft` | Edge feather, in squares | `0.15` |
+
+Water is painted darker in the middle, with a pale line of shallows along the shore. It does not block movement or sight in the Foundry export.
 
 ## Rooms
 
@@ -129,6 +155,34 @@ props:
 | `scale`, `flip`, `shadow` | Fine adjustments |
 
 Words that match a floor texture but no prop (for example `red rug`) are drawn as a rug of that texture, cut to `size`.
+
+## Scatter
+
+```yaml
+scatter:
+  - { want: oak tree, count: 6, cluster: 3.5, spread: 3, gap: -0.6 }     # copses on open ground
+  - { want: bush, density: 0.025, cluster: 3, spread: 1.2 }
+  - { want: rock, in: duck pond bank, count: 3 }
+  - { want: crate, in: Store room, count: 5, cluster: 5, spread: 0.8 }   # a pile of crates
+```
+
+| Key | Meaning | Default |
+|---|---|---|
+| `want` | Words for the thing to scatter (required) | |
+| `in` | An area, path, water (or its bank, e.g. `duck pond bank`) or room name, or `map` | `map` |
+| `count` | How many | |
+| `density` | How many per square, used when `count` is not given | |
+| `cluster` | Average number in each clump. `1` spreads them out evenly | `1` |
+| `spread` | How far a clump reaches from its middle, in squares | `1.5` |
+| `gap` | Space kept between items, in squares. Negative lets them overlap (tree canopies) | `0.1` |
+| `turn` | `any` angle, `square` (quarter turns) or `none` | `any` |
+| `scale` | `[min, max]` size change for each copy | `[0.9, 1.1]` |
+| `size` | `[w, h]` in squares, if the art has no size in its name | |
+| `vary` | Different art for each copy, where the pack has it | `true` |
+| `avoid` | More names to keep off, or `none` to drop the defaults | |
+| `layer`, `label` | As for props. Trees go on top of everything else | |
+
+Scattered things keep off walled rooms, furniture, door squares and each other. On open ground (`in: map`) they also keep off every path, area and pond; inside a named place they keep off paths and water. The layout comes from the scene's `seed`, so it is the same every render. If there isn't room for them all, `mapwriter check` says how many fitted.
 
 ## Lights
 

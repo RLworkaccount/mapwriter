@@ -252,14 +252,20 @@ def smooth_noise(n, period, rnd, closed):
 
 
 def resample(points, step, closed):
-    """Points spaced about ``step`` apart along the line (or round the outline)."""
+    """Points spaced evenly, about ``step`` apart, along the line (or round the outline)."""
     pts = list(points) + ([points[0]] if closed else [])
-    out = [pts[0]]
-    for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
-        L = math.hypot(x1 - x0, y1 - y0)
-        n = max(1, int(math.ceil(L / step)))
-        out += [(x0 + (x1 - x0) * i / n, y0 + (y1 - y0) * i / n) for i in range(1, n + 1)]
-    return out[:-1] if closed else out
+    seg = [math.hypot(x1 - x0, y1 - y0) for (x0, y0), (x1, y1) in zip(pts, pts[1:])]
+    total = sum(seg)
+    n = max(3 if closed else 1, int(math.ceil(total / step)))
+    out, i, run = [], 0, 0.0
+    for k in range(n + (0 if closed else 1)):
+        target = total * k / n
+        while i < len(seg) - 1 and run + seg[i] < target:
+            run += seg[i]; i += 1
+        f = 0.0 if seg[i] == 0 else min(1.0, (target - run) / seg[i])
+        (x0, y0), (x1, y1) = pts[i], pts[i + 1]
+        out.append((x0 + (x1 - x0) * f, y0 + (y1 - y0) * f))
+    return out
 
 
 def chaikin(poly, rounds=3, closed=True):
@@ -290,10 +296,11 @@ def catmull_rom(points, step=0.2):
     return out
 
 
-def rough_outline(poly, rough, rnd, smooth=False, step=0.25):
-    """Make an outline wander in and out by up to ``rough`` squares, like a worn lawn edge."""
+def rough_outline(poly, rough, rnd, smooth=False, step=0.25, grow=0.0):
+    """Make an outline wander in and out by up to ``rough`` squares, like a worn lawn edge.
+    ``grow`` pushes the whole outline outwards (for a bank round a pond)."""
     pts = chaikin(poly) if smooth else list(poly)
-    if rough <= 0:
+    if rough <= 0 and not grow:
         return pts
     pts = resample(pts, step, True)
     n = len(pts)
@@ -301,14 +308,14 @@ def rough_outline(poly, rough, rnd, smooth=False, step=0.25):
     fine = smooth_noise(n, max(2, int(0.5 / step)), rnd, True)
     # Sign of the area tells us which way "outwards" is.
     area = sum(pts[i][0] * pts[(i + 1) % n][1] - pts[(i + 1) % n][0] * pts[i][1] for i in range(n))
-    out_sign = 1 if area > 0 else -1
+    out_sign = -1 if area > 0 else 1
     out = []
     for i in range(n):
         (ax, ay), (bx, by) = pts[i - 1], pts[(i + 1) % n]
         tx, ty = bx - ax, by - ay
         L = math.hypot(tx, ty) or 1.0
         nx, ny = -ty / L * out_sign, tx / L * out_sign      # outward normal (y runs down)
-        d = rough * (0.8 * noise[i] + 0.2 * fine[i])
+        d = grow + rough * (0.8 * noise[i] + 0.2 * fine[i])
         out.append((pts[i][0] + nx * d, pts[i][1] + ny * d))
     return out
 
@@ -320,3 +327,11 @@ def path_strip(points, width, rough, rnd, curve=True, step=0.15) -> Region:
     noise = smooth_noise(n, max(2, int(1.2 / step)), rnd, False)
     radii = [max(0.1, width / 2 + rough * v) for v in noise]
     return Region(line=line, radii=radii)
+
+
+def grown(region: Region, by: float, rough: float, rnd) -> Region:
+    """A wider copy of a region: the bank round a pond or along a river."""
+    if region.poly is not None:
+        return Region(poly=rough_outline(region.poly, rough, rnd, grow=by))
+    noise = smooth_noise(len(region.line), 8, rnd, False)
+    return Region(line=region.line, radii=[r + max(0.05, by + rough * v) for r, v in zip(region.radii, noise)])
