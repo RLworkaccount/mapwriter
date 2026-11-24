@@ -18,7 +18,7 @@ from .vocab import expand, LIGHT_WORDS, RUG_WORDS
 PACK_MANIFEST = "mapwriter-pack.yaml"
 DEFAULT_PPSQ = 200
 SIZE_WORDS = {"big": 1, "large": 1, "long": 1, "huge": 1, "great": 1, "small": -1, "little": -1, "tiny": -1}
-PART_WORDS = {"adornment", "part", "broken", "piece", "overlay", "top", "base", "covered", "arranged", "misc",
+PART_WORDS = {"adornment", "part", "broken", "piece", "overlay", "top", "base", "covered", "arranged", "arrangement", "misc",
               "connector", "corner", "joint", "ending", "shadow"}          # Forgotten Adventures, 2-Minute Tabletop and most packs paint 200 px per 5 ft square
 
 
@@ -63,39 +63,54 @@ def _read_manifest(root: Path) -> dict:
     return {}
 
 
-def scan(root: str | os.PathLike, pack: str | None = None, read_sizes: bool = True) -> list[Asset]:
-    """Walk one pack folder and describe every image in it."""
+def _image_size(full) -> list[int] | None:
+    try:
+        from PIL import Image
+        with Image.open(full) as im:
+            return [im.width, im.height]
+    except Exception:
+        return None
+
+
+def scan(root: str | os.PathLike, pack: str | None = None, read_sizes: bool = True,
+         workers: int = 16) -> list[Asset]:
+    """Walk one pack folder and describe every image in it.
+
+    Reading each image's size means opening its header, which is slow on a cold
+    disk (about 10 ms a file). Big packs have well over 100,000 images, so the
+    headers are read on a pool of threads.
+    """
     root = Path(root).resolve()
     man = _read_manifest(root)
     pack = pack or man.get("name") or root.name
     ppsq = int(man.get("px_per_square", DEFAULT_PPSQ))
     overrides = man.get("tags", {}) or {}
     kinds = man.get("kinds", {}) or {}
-    out: list[Asset] = []
+    found: list[tuple[str, Path]] = []
     for dirpath, _dirs, files in os.walk(root):
         for fn in sorted(files):
             ext = os.path.splitext(fn)[1].lower()
             if ext not in naming.IMAGE_EXTS:
                 continue
             full = Path(dirpath) / fn
-            rel = full.relative_to(root).as_posix()
-            out.append(describe(rel, pack, str(root), ppsq, overrides, kinds, full if read_sizes else None))
-    return out
+            found.append((full.relative_to(root).as_posix(), full))
+    sizes: list[list[int] | None] = [None] * len(found)
+    if read_sizes and found:
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max(1, workers)) as ex:
+            sizes = list(ex.map(_image_size, (full for _rel, full in found), chunksize=64))
+    return [describe(rel, pack, str(root), ppsq, overrides, kinds, px=px)
+            for (rel, _full), px in zip(found, sizes)]
 
 
-def describe(rel: str, pack: str, root: str, ppsq: int = DEFAULT_PPSQ, overrides=None, kinds=None, full=None) -> Asset:
+def describe(rel: str, pack: str, root: str, ppsq: int = DEFAULT_PPSQ, overrides=None, kinds=None, full=None,
+             px: list[int] | None = None) -> Asset:
     fp = naming.footprint(os.path.basename(rel))
     kind = naming.kind_for(rel)
     if kind == "floor" and fp is not None:
         kind = "prop"
-    px = None
-    if full is not None:
-        try:
-            from PIL import Image
-            with Image.open(full) as im:
-                px = [im.width, im.height]
-        except Exception:
-            px = None
+    if px is None and full is not None:
+        px = _image_size(full)
     if fp is None and px and kind in ("prop", "door", "window"):
         fp = [max(1, round(px[0] / ppsq)), max(1, round(px[1] / ppsq))]
     extra = []
@@ -118,9 +133,28 @@ class Index:
         self._reindex()
 
     def _reindex(self):
+        """Group assets by kind and build word lookups, so a search only scores assets
+        that share its main noun (big packs have well over 100,000 images)."""
         self._by_kind = {}
+        self._words: dict[int, tuple[set[str], set[str]]] = {}
+        self._postings: dict[str | None, dict[str, list[Asset]]] = {None: {}}
         for a in self.assets:
             self._by_kind.setdefault(a.kind, []).append(a)
+            aw = a.all_words
+            nw = set(naming.words(os.path.basename(a.rel))) | set(a.extra_tags)
+            self._words[id(a)] = (aw, nw)
+            by_kind = self._postings.setdefault(a.kind, {})
+            for w in aw:
+                by_kind.setdefault(w, []).append(a)
+                self._postings[None].setdefault(w, []).append(a)
+
+    def _candidates(self, kind: str | None, head_opts: set[str]) -> list[Asset]:
+        postings = self._postings.get(kind, {})
+        seen: dict[int, Asset] = {}
+        for w in head_opts:
+            for a in postings.get(w, ()):
+                seen[id(a)] = a
+        return list(seen.values())
 
     # ---------- files ----------
     @classmethod
@@ -179,14 +213,10 @@ class Index:
         head = ws[-1]
         head_opts = expand(head)
         mods = [(w, expand(w)) for w in ws[:-1]]
-        pool = self._by_kind.get(kind, []) if kind else self.assets
         asked = set(ws)
         scored = []
-        for a in pool:
-            aw = a.all_words
-            name_words = set(naming.words(os.path.basename(a.rel))) | set(a.extra_tags)
-            if not (head_opts & aw):
-                continue
+        for a in self._candidates(kind, head_opts):
+            aw, name_words = self._words[id(a)]
             s = 10.0 if head in aw else 7.0
             if head_opts & name_words:
                 s += 3

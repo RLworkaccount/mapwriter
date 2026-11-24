@@ -70,6 +70,26 @@ def test_pack_order_breaks_ties(tmp_path):
     assert Index(list(reversed(a))).pick("chair").pack == "Second"
 
 
+def test_scan_reads_sizes_in_threads(tmp_path):
+    from PIL import Image
+    from mapwriter.assets.index import scan
+    for i in range(40):
+        Image.new("RGBA", (200 + i, 400)).save(tmp_path / f"Crate_{i:02d}.png")
+    (tmp_path / "broken.png").write_bytes(b"not an image")
+    assets = {a.rel: a for a in scan(tmp_path, workers=4)}
+    assert assets["Crate_07.png"].px == [207, 400]
+    assert assets["Crate_07.png"].footprint == [1, 2]
+    assert assets["broken.png"].px is None
+    assert all(a.px is None for a in scan(tmp_path, read_sizes=False))
+def test_plain_furniture_beats_arrangements():
+    names = ["Clutter/Table_Arrangements/Table_Arrangement_A89_3x2.webp",
+             "Furniture/Tables/Table_Rectangle_Wood_Dark_B_3x2.webp"]
+    idx = Index([describe(n, "FA", "/fa") for n in names])
+    assert "Rectangle" in idx.pick("big table", size=(3, 2)).rel
+    assert "Arrangement" in idx.pick("table arrangement").rel
+    assert idx.pick("sofa") is None
+
+
 # ------------------------------------------------------------------ scene
 ROOMS = {
     "name": "Test", "grid": {"width": 12, "height": 8},
@@ -164,3 +184,61 @@ def test_cli_smoke(tmp_path, capsys):
     main(["index", str(tmp_path / "pack"), "-o", str(tmp_path / "i.json")])
     main(["search", "round table", "-i", str(tmp_path / "i.json")])
     assert "Table_Round" in capsys.readouterr().out
+
+
+def test_light_is_cast_against_walls():
+    from mapwriter.geometry import light_area
+    from PIL import Image, ImageDraw
+
+    def lit(area, x, y):
+        m = Image.new("L", (200, 200), 0)
+        ImageDraw.Draw(m).polygon([(px * 10, py * 10) for px, py in area], fill=255)
+        return m.getpixel((int(x * 10), int(y * 10))) > 0
+
+    wall = [(10, 0, 10, 20)]
+    area = light_area((5, 10), wall, 8)
+    assert lit(area, 8, 10) and not lit(area, 12, 10)
+    # a one-square gap in the wall lets light through in a narrow beam
+    gap = [(10, 0, 10, 9.5), (10, 10.5, 10, 20)]
+    area = light_area((5, 10), gap, 8)
+    assert lit(area, 12, 10) and not lit(area, 12, 14)
+
+
+def test_open_doors_and_windows_let_light_out(starter):
+    scene = parse({
+        "name": "Spill", "grid": {"width": 12, "height": 8},
+        "rooms": [{"name": "A", "box": [1, 1, 6, 7], "floor": "wood planks",
+                   "doors": [{"wall": "east", "at": 3, "open": True}, {"wall": "south", "at": 3}],
+                   "windows": [{"wall": "north", "at": 3}]}],
+        "lights": [{"at": [3.5, 3.5], "radius": 6}],
+    })
+    plan = build(scene, starter)
+    xs = [p[0] for p in plan.light_areas[0]]
+    ys = [p[1] for p in plan.light_areas[0]]
+    assert max(xs) > 7          # through the open east door
+    assert min(ys) < 0.5        # through the north window
+    assert max(ys) <= 7.01      # the closed south door blocks
+def test_wall_junctions_and_joint_pieces():
+    from mapwriter.geometry import joint_shape, wall_junctions
+    # a box split by an inner wall: four corners and two T-joints
+    walls = [(0, 0, 10, 0), (0, 6, 10, 6), (0, 0, 0, 6), (10, 0, 10, 6), (5, 0, 5, 6)]
+    j = wall_junctions(walls)
+    assert joint_shape(j[(0, 0)]) == ("corner", 0)      # arms east and south
+    assert joint_shape(j[(10, 0)]) == ("corner", 1)     # south and west
+    assert joint_shape(j[(10, 6)]) == ("corner", 2)
+    assert joint_shape(j[(0, 6)]) == ("corner", 3)
+    assert joint_shape(j[(5, 0)]) == ("tee", 0)         # west, east and south
+    assert joint_shape(j[(5, 6)]) == ("tee", 2)         # west, east and north
+    assert joint_shape({"N", "E", "S", "W"}) == ("cross", 0)
+    assert len(j) == 6
+
+
+def test_fa_wall_set_gives_joint_pieces():
+    from mapwriter.plan import _wall_joints
+    base = "Walls/Wall_Stone_A/Wall_Stone_Slate_A_"
+    idx = Index([describe(base + n + ".webp", "FA", "/fa")
+                 for n in ("Straight_Path", "Corner_A_1x1", "Joint_A_1x1", "Joint_B_1x1")])
+    strip = idx.assets[0]
+    joints = _wall_joints([(0, 0, 4, 0), (0, 0, 0, 4)], strip, idx)
+    assert [(x, y, a.name, k) for x, y, a, k in joints] == [(0, 0, "Wall_Stone_Slate_A_Corner_A_1x1.webp", 0)]
+    assert _wall_joints([(0, 0, 4, 0), (0, 0, 0, 4)], None, idx) == []

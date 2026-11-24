@@ -116,6 +116,7 @@ class Painter:
         im = alpha_crop(self.cv.raw(a))
         if im.height > im.width:
             im = im.rotate(90, expand=True)
+        self._wall_band = im.height
         k = self.t / im.height
         return im.resize((max(1, round(im.width * k)), self.t), Image.LANCZOS)
 
@@ -152,6 +153,16 @@ class Painter:
                 ac(layer, s, (min(X0, X1) - t // 2, Y0 - t // 2))
             else:
                 ac(layer, s.rotate(90, expand=True), (X0 - t // 2, min(Y0, Y1) - t // 2))
+        if strip is not None:
+            # Joint pieces share the strip's band thickness; scale them the same way.
+            k = t / self._wall_band
+            for x, y, asset, turns in self.plan.wall_joints:
+                im = self.cv.raw(asset)
+                im = im.resize((max(1, round(im.width * k)), max(1, round(im.height * k))), Image.LANCZOS)
+                if turns:
+                    im = im.rotate(-90 * turns, expand=True)
+                X, Y = cv.P(x, y)
+                ac(layer, im, (X - im.width // 2, Y - im.height // 2))
         a = layer.getchannel("A")
         ao = a.filter(ImageFilter.GaussianBlur(cv.R * 0.22)).point(lambda v: int(min(255, v * 1.4) * 0.55))
         aol = Image.new("RGBA", cv.img.size, (15, 12, 20, 0)); aol.putalpha(ao)
@@ -192,6 +203,9 @@ class Painter:
                         for k in range(1, n):
                             x = k * im.width // n
                             d.line([x, 2, x, th - 3], fill=(84, 56, 34, 255), width=2)
+            if o.open and o.kind in ("door", "double"):
+                self._open_door(o, im)
+                continue
             if not o.horizontal:
                 im = im.rotate(90, expand=True)
             cx, cy = (X0 + X1) // 2, (Y0 + Y1) // 2
@@ -199,6 +213,33 @@ class Painter:
             if o.kind in ("door", "double"):
                 cv.shadow(im, pos, op=0.55)
             ac(cv.img, im, pos)
+
+    def _open_door(self, o, im: Image.Image):
+        """Draw a door swung open: each leaf turned square to the wall at its hinge,
+        on the side where a room is (inside, for an outside door)."""
+        cv, sc = self.cv, self.plan.scene
+        (ax, ay), (bx, by) = sorted([o.a, o.b])
+        mx, my = (ax + bx) / 2, (ay + by) / 2
+        def inside(s):
+            return sc.room_at(mx + (0 if o.horizontal else 0.5 * s), my + (0.5 * s if o.horizontal else 0)) is not None
+        side = 1 if inside(1) or not inside(-1) else -1
+        hinges = [((ax, ay), 1)] if o.kind == "door" else [((ax, ay), 1), ((bx, by), -1)]
+        span = (bx - ax) + (by - ay)
+        leaf_len = max(2, int(cv.R * span / len(hinges)))
+        th = im.height
+        leaf = im.resize((leaf_len, th), Image.LANCZOS).rotate(90, expand=True)   # now th wide, leaf_len tall
+        for (hx, hy), along in hinges:
+            HX, HY = cv.P(hx, hy)
+            if o.horizontal:
+                x = HX if along > 0 else HX - th
+                y = HY if side > 0 else HY - leaf_len
+                piece = leaf
+            else:
+                piece = leaf.rotate(90, expand=True)                                # leaf_len wide, th tall
+                y = HY if along > 0 else HY - th
+                x = HX if side > 0 else HX - leaf_len
+            cv.shadow(piece, (x, y), op=0.55)
+            ac(cv.img, piece, (x, y))
 
     # ------------------------------------------------------------ lighting
     def lit(self, base: Image.Image, version: str) -> Image.Image:
@@ -210,15 +251,27 @@ class Painter:
         lm = Image.new("RGB", base.size, ambient)
         add = Image.new("RGB", base.size, (0, 0, 0))
         masks = {}
-        for L in self.plan.lights:
+        areas = self.plan.light_areas or [None] * len(self.plan.lights)
+        for L, area in zip(self.plan.lights, areas):
             if L.when not in ("both", version):
                 continue
             rr = max(2, int(L.radius * cv.R))
             spr = radial(rr, L.colour, L.intensity * strength)
             x, y = cv.P(*L.at)
+            if area:
+                # Shadow mask, drawn on the sprite's own small square: walls and closed
+                # doors cast shadows; open doors, arches and windows let light through.
+                n = spr.width
+                m = Image.new("L", (n, n), 0)
+                pts = [(px - (x - rr), py - (y - rr)) for px, py in cv.poly_px(area)]
+                d = ImageDraw.Draw(m)
+                d.polygon(pts, fill=255)
+                d.line(pts + [pts[0]], fill=255, width=max(1, int(0.24 * cv.R)), joint="curve")
+                m = m.filter(ImageFilter.GaussianBlur(0.08 * cv.R))
+                spr = ImageChops.multiply(spr, Image.merge("RGB", [m] * 3))
             piece = Image.new("RGB", base.size, (0, 0, 0))
             piece.paste(spr, (x - rr, y - rr))
-            if L.room:
+            if L.room:                     # set in the scene file: keep this light in one room
                 if L.room not in masks:
                     room = sc.room(L.room)
                     masks[L.room] = cv.poly_mask(room.poly, grow=0.15, feather=0.08)

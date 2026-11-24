@@ -90,7 +90,7 @@ lights:
   - { at: [12, 22], radius: 8, colour: moon, when: night, intensity: 0.5 }
 ```
 
-`at` is a point (use `.5` for the middle of a square). `colour` is a name (`warm`, `candle`, `fire`, `lantern`, `cool`, `moon`, `white`, `magic`, `green`, `blue`, `red`, `gold`), `#rrggbb` or `[r, g, b]`. `when` is `both`, `day` or `night`. A light inside a walled room only lights that room.
+`at` is a point (use `.5` for the middle of a square). `colour` is a name (`warm`, `candle`, `fire`, `lantern`, `cool`, `moon`, `white`, `magic`, `green`, `blue`, `red`, `gold`), `#rrggbb` or `[r, g, b]`. `when` is `both`, `day` or `night`. Light is cast against the walls: walls and closed doors throw shadows, while windows, arches and open doors (`open: true` on a door) let light spill into the next room or outside. Add `room: Kitchen` to a light to keep it inside one room.
 
 ## Notes
 

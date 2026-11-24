@@ -11,7 +11,8 @@ import random
 from dataclasses import dataclass, field
 
 from .assets.index import Asset, Index
-from .geometry import merge_walls, on_wall, reachable
+from .geometry import (distance_to_segment, joint_shape, light_area, merge_walls, on_wall, reachable,
+                       wall_junctions)
 from .scene import Scene, Prop, Light, Opening, Room, SceneError
 
 
@@ -50,6 +51,9 @@ class Plan:
     floors: list[Floor] = field(default_factory=list)
     raw_walls: list = field(default_factory=list)          # before openings are cut
     walls: list = field(default_factory=list)              # after
+    light_walls: list = field(default_factory=list)        # walls and closed doors: what stops light
+    light_areas: list = field(default_factory=list)        # one polygon per light: where its light reaches
+    wall_joints: list = field(default_factory=list)        # (x, y, asset, clockwise quarter turns)
     wall_asset: Asset | None = None
     openings: list[tuple[Opening, Asset | None]] = field(default_factory=list)
     props: list[Placed] = field(default_factory=list)
@@ -155,6 +159,10 @@ def build(scene: Scene, index: Index) -> Plan:
             asset = (index.get(o.file) if o.file else None) or index.pick(want, "window", seed=seed)
         plan.openings.append((o, asset))
     plan.walls = merge_walls(raw, [o for o, _ in plan.openings if o.kind != "window"])
+    # Light passes through windows, arches and open doors, and is stopped by walls and closed doors.
+    plan.light_walls = merge_walls(raw, [o for o, _ in plan.openings
+                                         if o.kind in ("window", "arch") or o.open])
+    plan.wall_joints = _wall_joints(plan.walls, plan.wall_asset, index)
 
     # ---------- props ----------
     occupied: set[tuple[int, int]] = set()
@@ -242,9 +250,7 @@ def build(scene: Scene, index: Index) -> Plan:
 
     plan.lights = list(scene.lights) + plan.lights
     for L in plan.lights:
-        if L.room is None:
-            rm = scene.room_at(*L.at)
-            L.room = rm.name if rm and rm.walls is not None else None
+        plan.light_areas.append(_light_area(scene, L, plan.light_walls))
 
     # ---------- checks ----------
     for r in scene.rooms:
@@ -272,6 +278,39 @@ def build(scene: Scene, index: Index) -> Plan:
             if inside and not any(s in reach for s in inside):
                 warn(f"Room '{r.name}' has no way in (no door or arch reaches it).")
     return plan
+
+
+def _light_area(scene: Scene, L: Light, blockers) -> list:
+    """Where a light reaches, cast against the walls. A light sitting on a wall line
+    (a sconce, a fireplace against the wall) is nudged into its room first, so it
+    does not shine through the wall it hangs on."""
+    x, y = L.at
+    if any(distance_to_segment(x, y, s) < 0.12 for s in blockers):
+        rm = scene.room_at(x, y) or scene.room_at(x + 0.2, y + 0.2) or scene.room_at(x - 0.2, y - 0.2)
+        if rm is not None:
+            bx0, by0, bx1, by1 = rm.box if getattr(rm, "box", None) else (x, y, x, y)
+            cx, cy = (bx0 + bx1) / 2, (by0 + by1) / 2
+            d = max(1e-6, ((cx - x) ** 2 + (cy - y) ** 2) ** 0.5)
+            x, y = x + 0.15 * (cx - x) / d, y + 0.15 * (cy - y) / d
+    return light_area((x, y), blockers, L.radius)
+# Forgotten Adventures sets ship joint pieces next to each *_Straight_Path strip.
+JOINT_NAMES = {"corner": "Corner_A_1x1", "tee": "Joint_B_1x1", "cross": "Joint_A_1x1"}
+
+
+def _wall_joints(walls, wall_asset: Asset | None, index: Index) -> list:
+    """Corner, T and cross pieces from the wall's own set, where the pack has them."""
+    if wall_asset is None or "Straight_Path" not in wall_asset.rel:
+        return []
+    pieces = {}
+    for kind, name in JOINT_NAMES.items():
+        rel = wall_asset.rel.replace("Straight_Path", name)
+        pieces[kind] = next((a for a in index.assets if a.pack == wall_asset.pack and a.rel == rel), None)
+    out = []
+    for (x, y), arms in sorted(wall_junctions(walls).items()):
+        kind, turns = joint_shape(arms)
+        if kind and pieces.get(kind) is not None:
+            out.append((x, y, pieces[kind], turns))
+    return out
 
 
 def _auto_place(room: Room, p: Prop, a, count, occupied, door_squares, rnd, warn, name):
