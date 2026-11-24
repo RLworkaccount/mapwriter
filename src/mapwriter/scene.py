@@ -6,6 +6,7 @@ corner of the squares it covers.
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -91,6 +92,20 @@ class Area:
     poly: list[tuple[float, float]]
     floor: str
     soft: float = 0.3      # edge feather, squares
+    rough: float = 0.0     # how far the edge wanders in and out, squares
+    smooth: bool = False   # round off the corners
+
+
+@dataclass
+class ScenePath:
+    """A strip of floor along a line: a road, a track, a stream bed."""
+    name: str
+    points: list[tuple[float, float]]
+    floor: str
+    width: float = 2.0     # squares
+    soft: float = 0.3
+    rough: float = 0.25    # how much the width wanders, squares
+    curve: bool = True     # smooth curve through the points, or straight legs
 
 
 @dataclass
@@ -142,6 +157,7 @@ class Scene:
     window_style: str = "wood window"
     rooms: list[Room] = field(default_factory=list)
     areas: list[Area] = field(default_factory=list)
+    paths: list[ScenePath] = field(default_factory=list)
     walls: list[tuple[float, float, float, float]] = field(default_factory=list)
     openings: list[Opening] = field(default_factory=list)
     props: list[Prop] = field(default_factory=list)
@@ -171,7 +187,25 @@ def _pt(v, what):
     return float(v[0]), float(v[1])
 
 
-def _poly(d, what):
+def _circle(c, what, steps=48):
+    if isinstance(c, dict):
+        (cx, cy), r = _pt(c.get("centre", c.get("center")), what), c.get("radius")
+    elif isinstance(c, (list, tuple)) and len(c) == 3:
+        cx, cy, r = c
+    else:
+        raise SceneError(f"{what}: circle should be [x, y, radius] or {{centre: [x, y], radius: r}}, got {c!r}")
+    try:
+        cx, cy, r = float(cx), float(cy), float(r)
+    except (TypeError, ValueError):
+        raise SceneError(f"{what}: circle needs numbers, got {c!r}")
+    if r <= 0:
+        raise SceneError(f"{what}: circle radius must be more than 0")
+    return [(cx + r * math.cos(2 * math.pi * i / steps), cy + r * math.sin(2 * math.pi * i / steps)) for i in range(steps)]
+
+
+def _poly(d, what, any_angle=False):
+    if any_angle and "circle" in d:
+        return _circle(d["circle"], what)
     if "box" in d:
         b = d["box"]
         if not (isinstance(b, (list, tuple)) and len(b) == 4):
@@ -182,12 +216,15 @@ def _poly(d, what):
         return [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
     if "shape" in d:
         pts = [_pt(p, what) for p in d["shape"]]
-        for i in range(len(pts)):
+        if len(pts) < 3:
+            raise SceneError(f"{what}: shape needs at least 3 points")
+        for i in range(len(pts) if not any_angle else 0):
             (ax, ay), (bx, by) = pts[i], pts[(i + 1) % len(pts)]
             if ax != bx and ay != by:
                 raise SceneError(f"{what}: shape edges must be straight across or down; {pts[i]} to {pts[(i + 1) % len(pts)]} is diagonal")
         return pts
-    raise SceneError(f"{what} needs a box [x0, y0, x1, y1] or a shape [[x, y], ...]")
+    extra = ", a circle [x, y, radius]" if any_angle else ""
+    raise SceneError(f"{what} needs a box [x0, y0, x1, y1]{extra} or a shape [[x, y], ...]")
 
 
 def _side_opening(room_poly, spec, kind, what):
@@ -248,7 +285,21 @@ def parse(data: dict, source: str | None = None) -> Scene:
         what = f"areas[{i}] ({a.get('name', '?')})"
         if "floor" not in a:
             raise SceneError(f"{what} needs a floor")
-        sc.areas.append(Area(str(a.get("name", f"area {i + 1}")), _poly(a, what), str(a["floor"]), float(a.get("soft", 0.3))))
+        sc.areas.append(Area(str(a.get("name", f"area {i + 1}")), _poly(a, what, any_angle=True), str(a["floor"]),
+                             float(a.get("soft", 0.3)), float(a.get("rough", 0.0)), bool(a.get("smooth", False))))
+
+    for i, p in enumerate(data.get("paths") or []):
+        what = f"paths[{i}] ({p.get('name', '?') if isinstance(p, dict) else '?'})"
+        if not isinstance(p, dict) or "floor" not in p:
+            raise SceneError(f"{what} needs a floor, e.g. floor: dirt path")
+        pts = [_pt(q, what) for q in (p.get("points") or [])]
+        if len(pts) < 2:
+            raise SceneError(f"{what} needs points: [[x, y], [x, y], ...] with at least two points")
+        width = float(p.get("width", 2))
+        if width <= 0:
+            raise SceneError(f"{what}: width must be more than 0")
+        sc.paths.append(ScenePath(str(p.get("name", f"path {i + 1}")), pts, str(p["floor"]), width,
+                             float(p.get("soft", 0.3)), float(p.get("rough", 0.25)), bool(p.get("curve", True))))
 
     for i, r in enumerate(data.get("rooms") or []):
         what = f"rooms[{i}] ({r.get('name', '?')})"

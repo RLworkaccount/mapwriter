@@ -48,7 +48,7 @@ class Painter:
                     tex = alpha_crop(tex)
             else:
                 tex = noise_texture((cv.R * 2, cv.R * 2), _fallback_colour(f.want), seed=seeded(f.name))
-            m = cv.poly_mask(f.poly, feather=f.soft)
+            m = cv.region_mask(f.region, feather=f.soft)
             cv.fill(tex, m)
             if f.is_room:
                 # soft darkening into the corners of each room
