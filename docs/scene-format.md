@@ -13,6 +13,7 @@ A scene file is YAML. All positions and sizes are in grid squares (5 ft each). `
 | `style` | `{ walls, doors, windows }`: words for the default wall, door and window art | `stone wall`, `wood door`, `wood window` |
 | `areas` | Floors without walls (lawns, yards, mud, squares) | none |
 | `paths` | Strips of floor along a line (roads, tracks, footpaths) | none |
+| `water` | Ponds, lakes, rivers and streams, with banks | none |
 | `rooms` | Walled spaces with floors, doors and windows | none |
 | `walls` | Extra free-standing walls | none |
 | `doors`, `windows`, `arches` | Openings not tied to a room | none |
@@ -73,7 +74,31 @@ paths:
 | `rough` | How much the width wanders, in squares | `0.25` |
 | `soft` | Edge feather, in squares | `0.3` |
 
-Paths are painted first, then areas, then rooms, so a road runs under the square or yard it leads into.
+Paths are painted first, then areas, then water, then rooms, so a road runs under the square or yard it leads into.
+
+## Water
+
+```yaml
+water:
+  - name: duck pond
+    circle: [4, 6, 2]             # or box: / shape:, like an area
+  - name: stream
+    points: [[26, 15], [22, 17.5], [17, 17], [13, 19]]   # or a line, like a path
+    width: 1.5
+    bank: { floor: mud, width: 0.5 }
+```
+
+| Key | Meaning | Default |
+|---|---|---|
+| `circle`, `box`, `shape` | A pond or lake outline, as for areas | |
+| `points`, `width`, `curve` | A river or stream along a line, as for paths | width `2`, curve `true` |
+| `floor` | Words for the water texture | `water` |
+| `bank` | `{ floor, width }` for the strip of ground round the water, just floor words, or `false` for no bank | `mud`, `0.6` squares |
+| `rough` | How far the edge wanders, in squares | `0.3` |
+| `smooth` | Round off the corners of a pond outline | `true` |
+| `soft` | Edge feather, in squares | `0.15` |
+
+Water is painted darker in the middle, with a pale line of shallows along the shore. It does not block movement or sight in the Foundry export.
 
 ## Rooms
 

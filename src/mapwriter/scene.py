@@ -129,6 +129,22 @@ class Prop:
 
 
 @dataclass
+class Water:
+    """A pond or lake (an outline) or a river or stream (points along a line), with a bank."""
+    name: str
+    floor: str = "water"
+    poly: list[tuple[float, float]] | None = None
+    points: list[tuple[float, float]] | None = None
+    width: float = 2.0
+    rough: float = 0.3
+    smooth: bool = True
+    curve: bool = True
+    bank: str | None = "mud"   # floor words for the bank, or None for no bank
+    bank_width: float = 0.6
+    soft: float = 0.15
+
+
+@dataclass
 class Light:
     at: tuple[float, float]
     radius: float = 6.0
@@ -158,6 +174,7 @@ class Scene:
     rooms: list[Room] = field(default_factory=list)
     areas: list[Area] = field(default_factory=list)
     paths: list[ScenePath] = field(default_factory=list)
+    water: list[Water] = field(default_factory=list)
     walls: list[tuple[float, float, float, float]] = field(default_factory=list)
     openings: list[Opening] = field(default_factory=list)
     props: list[Prop] = field(default_factory=list)
@@ -300,6 +317,32 @@ def parse(data: dict, source: str | None = None) -> Scene:
             raise SceneError(f"{what}: width must be more than 0")
         sc.paths.append(ScenePath(str(p.get("name", f"path {i + 1}")), pts, str(p["floor"]), width,
                              float(p.get("soft", 0.3)), float(p.get("rough", 0.25)), bool(p.get("curve", True))))
+
+    for i, wt in enumerate(data.get("water") or []):
+        what = f"water[{i}] ({wt.get('name', '?') if isinstance(wt, dict) else '?'})"
+        if not isinstance(wt, dict):
+            raise SceneError(f"{what}: give a pond as circle/box/shape, or a river as points: [[x, y], ...]")
+        bank = wt.get("bank", {})
+        if bank in (False, None, "none", "no"):
+            bank_floor, bank_w = None, 0.0
+        elif isinstance(bank, dict):
+            bank_floor, bank_w = str(bank.get("floor", "mud")), float(bank.get("width", 0.6))
+        else:
+            bank_floor, bank_w = str(bank), 0.6
+        w = Water(str(wt.get("name", f"water {i + 1}")), str(wt.get("floor", "water")),
+                  rough=float(wt.get("rough", 0.3)), smooth=bool(wt.get("smooth", True)),
+                  curve=bool(wt.get("curve", True)), bank=bank_floor, bank_width=bank_w,
+                  soft=float(wt.get("soft", 0.15)))
+        if "points" in wt:
+            w.points = [_pt(q, what) for q in wt["points"] or []]
+            if len(w.points) < 2:
+                raise SceneError(f"{what} needs points: [[x, y], [x, y], ...] with at least two points")
+            w.width = float(wt.get("width", 2))
+            if w.width <= 0:
+                raise SceneError(f"{what}: width must be more than 0")
+        else:
+            w.poly = _poly(wt, what, any_angle=True)
+        sc.water.append(w)
 
     for i, r in enumerate(data.get("rooms") or []):
         what = f"rooms[{i}] ({r.get('name', '?')})"

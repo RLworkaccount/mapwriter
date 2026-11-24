@@ -50,6 +50,8 @@ class Painter:
                 tex = noise_texture((cv.R * 2, cv.R * 2), _fallback_colour(f.want), seed=seeded(f.name))
             m = cv.region_mask(f.region, feather=f.soft)
             cv.fill(tex, m)
+            if f.water:
+                self._water_depth(f)
             if f.is_room:
                 # soft darkening into the corners of each room
                 edge = cv.poly_mask(f.poly)
@@ -57,6 +59,19 @@ class Painter:
                 ring = ImageChops.multiply(ring, edge).point(lambda v: int(min(255, v * 1.6) * 0.5))
                 l = Image.new("RGBA", cv.img.size, (18, 14, 20, 0)); l.putalpha(ring)
                 cv.overlay(l)
+
+    def _water_depth(self, f):
+        """Darker water away from the edge, and a pale line of shallows along the shore."""
+        cv = self.cv
+        m = cv.region_mask(f.region)
+        far = m.filter(ImageFilter.GaussianBlur(cv.R * 0.8))
+        deep = ImageChops.multiply(far.point(lambda v: int(max(0, v - 140) * 1.2)), m)
+        l = Image.new("RGBA", cv.img.size, (14, 34, 56, 0)); l.putalpha(deep)
+        cv.overlay(l)
+        near = m.filter(ImageFilter.GaussianBlur(cv.R * 0.1))
+        shore = ImageChops.multiply(ImageChops.invert(near), m).point(lambda v: int(min(255, v * 1.6) * 0.45))
+        l = Image.new("RGBA", cv.img.size, (196, 222, 226, 0)); l.putalpha(shore)
+        cv.overlay(l)
 
     # ------------------------------------------------------------ props
     def _prop_image(self, p: Placed) -> Image.Image | None:

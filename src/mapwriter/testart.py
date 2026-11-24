@@ -97,6 +97,34 @@ def grass(colour=(96, 132, 66), seed=0, size=2):
     return im
 
 
+def water(colour=(58, 104, 128), seed=0, size=2):
+    rnd = random.Random(seed)
+    W = H = size * S
+    im = Image.new("RGB", (W, H), colour)
+    d = ImageDraw.Draw(im)
+    for _ in range(160):
+        x, y = rnd.uniform(0, W), rnd.uniform(0, H)
+        L = rnd.uniform(20, 60); c = _shade(colour, rnd.uniform(0.9, 1.25))
+        for ox in (0, -W, W):
+            for oy in (0, -H, H):
+                d.arc([x + ox - L, y + oy - L / 4, x + ox + L, y + oy + L / 4], 200, 340, fill=c, width=2)
+    return im.filter(ImageFilter.SMOOTH)
+
+
+def mud(colour=(104, 84, 60), seed=0, size=2):
+    rnd = random.Random(seed)
+    W = H = size * S
+    im = Image.new("RGB", (W, H), colour)
+    d = ImageDraw.Draw(im)
+    for _ in range(500):
+        x, y = rnd.uniform(0, W), rnd.uniform(0, H); r = rnd.uniform(4, 18)
+        c = _shade(colour, rnd.uniform(0.8, 1.15))
+        for ox in (0, -W, W):
+            for oy in (0, -H, H):
+                d.ellipse([x + ox - r, y + oy - r * .7, x + ox + r, y + oy + r * .7], fill=c)
+    return im.filter(ImageFilter.GaussianBlur(2))
+
+
 def rug_texture(base, trim, seed=0):
     W = H = S
     im = Image.new("RGB", (W, H), base)
@@ -348,6 +376,8 @@ def build_pack(out_dir: str | Path) -> int:
     save("Textures/Stone_Floors/Stone_Tiles_Warm.jpg", flagstones((160, 138, 112), 2))
     save("Textures/Stone_Floors/Cobblestone_Gray.jpg", flagstones((122, 118, 112), 3, cobble=True))
     save("Textures/Grass/Grass_Green.jpg", grass())
+    save("Textures/Water/Water_Pond_Blue.jpg", water())
+    save("Textures/Dirt/Mud_Brown.jpg", mud())
     save("Textures/Dirt/Dirt_Path.jpg", flagstones((126, 100, 70), 4, cobble=True))
     save("Textures/Rugs/Rug_Texture_Red.jpg", rug_texture((140, 44, 48), (220, 180, 90)))
     save("Textures/Rugs/Rug_Texture_Blue.jpg", rug_texture((52, 70, 130), (220, 200, 140)))

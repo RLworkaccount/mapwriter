@@ -293,3 +293,30 @@ def test_outdoor_render(starter, tmp_path):
     lane, lawn = im.getpixel((6 * 40, 9 * 40 + 20)), im.getpixel((8 * 40, 6 * 40))
     grass = im.getpixel((14 * 40, 2 * 40))
     assert lane != grass and lawn != grass
+
+
+def test_water_with_banks(starter):
+    data = json.loads(json.dumps(OUTDOOR))
+    data["water"] = [{"name": "pond", "circle": [4, 4, 2]},
+                     {"name": "brook", "points": [[0, 7], [16, 7]], "width": 1, "bank": False},
+                     {"name": "moat", "box": [10, 1, 14, 3], "bank": {"floor": "dirt", "width": 1}, "rough": 0}]
+    plan = build(parse(data), starter)
+    by = {f.name: f for f in plan.floors}
+    assert [f.name for f in plan.floors if f.water] == ["pond", "brook", "moat"]
+    assert "brook bank" not in by and by["moat bank"].want == "dirt"
+    pond, bank = by["pond"].region, by["pond bank"].region
+    assert pond.contains(4, 4) and bank.contains(4, 4)
+    # The bank reaches past the water all the way round, and the water stays near its circle.
+    edge = [((x - 4) ** 2 + (y - 4) ** 2) ** 0.5 for x, y in bank.poly]
+    water = [((x - 4) ** 2 + (y - 4) ** 2) ** 0.5 for x, y in pond.poly]
+    assert min(edge) > 2.0 and 1.5 < min(water) and max(water) < 2.5
+    assert by["moat bank"].region.contains(12, 0.3) and not by["moat"].region.contains(12, 0.3)
+    with pytest.raises(SceneError, match="at least two points"):
+        parse({**data, "water": [{"name": "x", "points": [[1, 1]]}]})
+
+
+def test_resample_spacing():
+    from mapwriter.geometry import resample
+    pts = resample([(0, 0), (0.01, 0), (0.02, 0), (4, 0)], 0.5, False)
+    gaps = [b[0] - a[0] for a, b in zip(pts, pts[1:])]
+    assert len(pts) == 9 and max(gaps) - min(gaps) < 1e-9

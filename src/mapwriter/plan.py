@@ -11,7 +11,7 @@ import random
 from dataclasses import dataclass, field
 
 from .assets.index import Asset, Index
-from .geometry import (Region, distance_to_segment, path_strip, rough_outline, joint_shape, light_area, merge_walls, on_wall, reachable,
+from .geometry import (Region, distance_to_segment, grown, path_strip, rough_outline, joint_shape, light_area, merge_walls, on_wall, reachable,
                        wall_junctions)
 from .scene import Scene, Prop, Light, Opening, Room, SceneError
 
@@ -44,6 +44,7 @@ class Floor:
     soft: float = 0.0
     is_room: bool = False
     region: Region | None = None              # the exact outline painted; set for every floor
+    water: bool = False                       # painted with a deep middle and a light shoreline
 
     def __post_init__(self):
         if self.region is None:
@@ -135,6 +136,18 @@ def build(scene: Scene, index: Index) -> Plan:
         rnd_edge = random.Random(f"{seed}:area:{a.name}")
         outline = rough_outline(a.poly, a.rough, rnd_edge, a.smooth)
         plan.floors.append(Floor(a.name, outline, a.floor, floor_asset(a.floor), a.soft))
+    # Water after areas, with each bank first so it shows as a rim round the water.
+    for wt in scene.water:
+        rnd_w = random.Random(f"{seed}:water:{wt.name}")
+        if wt.points:
+            body = path_strip(wt.points, wt.width, wt.rough * 0.6, rnd_w, wt.curve)
+        else:
+            body = Region(poly=rough_outline(wt.poly, wt.rough, rnd_w, wt.smooth))
+        if wt.bank and wt.bank_width > 0:
+            bank = grown(body, wt.bank_width, wt.bank_width * 0.4, rnd_w)
+            plan.floors.append(Floor(f"{wt.name} bank", bank.poly, wt.bank, floor_asset(wt.bank),
+                                     max(wt.soft, wt.bank_width * 0.5), region=bank))
+        plan.floors.append(Floor(wt.name, body.poly, wt.floor, floor_asset(wt.floor), wt.soft, region=body, water=True))
     for r in scene.rooms:
         if r.floor:
             plan.floors.append(Floor(r.name, r.poly, r.floor, floor_asset(r.floor), 0.0, True))
