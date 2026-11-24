@@ -1,6 +1,7 @@
 """mapwriter command line.
 
     mapwriter starter-pack OUT_DIR          draw the free starter pack
+    mapwriter pack-check FOLDER --write     look over a new pack, write mapwriter-pack.yaml
     mapwriter index FOLDER... -o index.json scan asset folders
     mapwriter search "round table"          find assets by words
     mapwriter check scene.yaml              list problems with a scene
@@ -48,6 +49,21 @@ def cmd_index(args):
     idx.save(args.output)
     kinds = ", ".join(f"{v} {k}" for k, v in idx.kinds().items())
     print(f"Indexed {len(idx.assets)} assets ({kinds}) -> {args.output}")
+
+
+def cmd_pack_check(args):
+    from .assets.packcheck import check_pack
+    r = check_pack(args.folder, write=args.write, credit=args.credit)
+    print(f"{r['pack']}: {r['files']} images ({', '.join(f'{v} {k}' for k, v in sorted(r['kinds'].items()))})")
+    print(f"Pixels per square: {r['ppsq'] or 'unknown'} ({r['why']})")
+    if r["vague"]:
+        print(f"{len(r['vague'])} file(s) with names that say too little; give them words in tags.yaml:")
+        for v in r["vague"]:
+            print(f"  - {v}")
+    if r["manifest"]:
+        print(f"Wrote {r['manifest']}. Check it, then run: mapwriter index {args.folder}")
+    elif args.write:
+        print("The pack already has a mapwriter-pack.yaml; left it alone.")
 
 
 def cmd_search(args):
@@ -126,6 +142,11 @@ def main(argv=None):
     p.add_argument("folders", nargs="+"); p.add_argument("-o", "--output", default=DEFAULT_INDEX)
     p.add_argument("--fast", action="store_true", help="skip reading image sizes")
     p.set_defaults(fn=cmd_index)
+
+    p = sub.add_parser("pack-check", help="look over a new asset pack and guess its settings")
+    p.add_argument("folder"); p.add_argument("-w", "--write", action="store_true", help="write a starter mapwriter-pack.yaml")
+    p.add_argument("--credit", help="credit line to put in the pack's yaml, e.g. \"2-Minute Tabletop, CC BY-NC 4.0\"")
+    p.set_defaults(fn=cmd_pack_check)
 
     p = sub.add_parser("search", help="find assets by words"); p.add_argument("words")
     p.add_argument("-k", "--kind", default="prop", choices=["prop", "floor", "wall", "door", "window", "overlay", "roof", "effect", "any"])

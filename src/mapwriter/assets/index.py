@@ -34,6 +34,7 @@ class Asset:
     px: list[int] | None = None   # image size in pixels
     ppsq: int = DEFAULT_PPSQ
     extra_tags: list[str] = field(default_factory=list)
+    credit: str | None = None     # the pack's credit line, from mapwriter-pack.yaml
 
     @property
     def path(self) -> str:
@@ -99,8 +100,11 @@ def scan(root: str | os.PathLike, pack: str | None = None, read_sizes: bool = Tr
         from concurrent.futures import ThreadPoolExecutor
         with ThreadPoolExecutor(max(1, workers)) as ex:
             sizes = list(ex.map(_image_size, (full for _rel, full in found), chunksize=64))
-    return [describe(rel, pack, str(root), ppsq, overrides, kinds, px=px)
-            for (rel, _full), px in zip(found, sizes)]
+    credit = man.get("credit")
+    out = [describe(rel, pack, str(root), ppsq, overrides, kinds, px=px) for (rel, _full), px in zip(found, sizes)]
+    for a in out:
+        a.credit = credit
+    return out
 
 
 def describe(rel: str, pack: str, root: str, ppsq: int = DEFAULT_PPSQ, overrides=None, kinds=None, full=None,
