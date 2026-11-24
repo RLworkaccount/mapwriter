@@ -1,4 +1,4 @@
-# Scene file format (v0.1)
+# Scene file format (v0.2)
 
 A scene file is YAML. All positions and sizes are in grid squares (5 ft each). `x` runs right and `y` runs down; `[0, 0]` is the top-left corner of the map. Walls, doors and windows sit on grid lines, between squares.
 
@@ -11,7 +11,8 @@ A scene file is YAML. All positions and sizes are in grid squares (5 ft each). `
 | `seed` | Any whole number. Changes random choices (which variant of a chair, where auto-placed props go) | `1` |
 | `ground` | Floor words for the whole map, e.g. `grass`, `cobblestone` | `stone floor` |
 | `style` | `{ walls, doors, windows }`: words for the default wall, door and window art | `stone wall`, `wood door`, `wood window` |
-| `areas` | Floors without walls (paths, lawns, ponds) | none |
+| `areas` | Floors without walls (lawns, yards, mud, squares) | none |
+| `paths` | Strips of floor along a line (roads, tracks, footpaths) | none |
 | `rooms` | Walled spaces with floors, doors and windows | none |
 | `walls` | Extra free-standing walls | none |
 | `doors`, `windows`, `arches` | Openings not tied to a room | none |
@@ -25,7 +26,54 @@ A scene file is YAML. All positions and sizes are in grid squares (5 ft each). `
 Rooms and areas take either:
 
 - `box: [x0, y0, x1, y1]`: a rectangle from corner to corner, or
-- `shape: [[x, y], [x, y], ...]`: an outline whose edges go straight across or straight down (L-shapes, T-shapes and so on).
+- `shape: [[x, y], [x, y], ...]`: an outline. For rooms its edges must go straight across or straight down (L-shapes, T-shapes and so on); for areas they can go at any angle.
+- Areas can also take `circle: [x, y, radius]` (or `{ centre: [x, y], radius: r }`).
+
+## Areas
+
+```yaml
+areas:
+  - name: square
+    circle: [13, 10, 6]
+    floor: cobblestone
+    rough: 0.3          # the edge wanders in and out by up to this many squares
+    soft: 0.15          # edge feather, in squares
+  - name: mud
+    shape: [[2, 13], [7, 12], [8, 16], [4, 18], [1, 17]]
+    floor: dirt
+    smooth: true        # round off the corners first
+    rough: 0.5
+```
+
+| Key | Meaning | Default |
+|---|---|---|
+| `floor` | Floor words (required) | |
+| `soft` | How far the edge fades, in squares | `0.3` |
+| `rough` | How far the edge wanders in and out, in squares. `0` keeps it exact | `0` |
+| `smooth` | `true` rounds off the corners | `false` |
+
+The rough edge is worked out from the scene's `seed` and the area's name, so it stays the same each time you render.
+
+## Paths
+
+```yaml
+paths:
+  - name: east road
+    points: [[18.5, 9], [21, 8], [23.5, 9.5], [26, 9]]
+    width: 2.5
+    floor: dirt path
+```
+
+| Key | Meaning | Default |
+|---|---|---|
+| `points` | Two or more `[x, y]` points the path runs through. Points can lie off the map, so a road runs off the edge | |
+| `floor` | Floor words (required) | |
+| `width` | Width in squares | `2` |
+| `curve` | `true` draws a smooth curve through the points, `false` straight legs between them | `true` |
+| `rough` | How much the width wanders, in squares | `0.25` |
+| `soft` | Edge feather, in squares | `0.3` |
+
+Paths are painted first, then areas, then rooms, so a road runs under the square or yard it leads into.
 
 ## Rooms
 

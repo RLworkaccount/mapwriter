@@ -60,6 +60,19 @@ class Canvas:
             m = m.filter(ImageFilter.GaussianBlur(feather * self.R))
         return m
 
+    def region_mask(self, region, feather=0.0):
+        """Mask for a plan Region: an outline, or a strip drawn as overlapping discs."""
+        if region.poly is not None:
+            return self.poly_mask(region.poly, feather=feather)
+        m = self.mask()
+        d = ImageDraw.Draw(m)
+        for (x, y), r in zip(region.line, region.radii):
+            X, Y = self.P(x, y); rr = r * self.R
+            d.ellipse([X - rr, Y - rr, X + rr, Y + rr], fill=255)
+        if feather:
+            m = m.filter(ImageFilter.GaussianBlur(feather * self.R))
+        return m
+
     def rect_mask(self, x0, y0, x1, y1, radius=0.0):
         m = self.mask()
         ImageDraw.Draw(m).rounded_rectangle([*self.P(x0, y0), *self.P(x1, y1)], radius=int(radius * self.R), fill=255)

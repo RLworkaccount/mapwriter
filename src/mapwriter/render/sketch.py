@@ -4,6 +4,7 @@ from __future__ import annotations
 from PIL import Image, ImageDraw, ImageFont
 
 from ..plan import Plan
+from .painter import _fallback_colour
 
 ROOM_COLOURS = [(236, 222, 196), (206, 226, 214), (214, 214, 236), (238, 210, 210),
                 (222, 234, 198), (232, 222, 238), (208, 230, 236), (240, 228, 206)]
@@ -35,10 +36,22 @@ def sketch(plan: Plan, px: int = 48) -> Image.Image:
         return m + x * px, m + y * px
 
     d.rectangle([*P(0, 0), *P(sc.width, sc.height)], fill=(238, 236, 230))
-    for a in sc.areas:
-        d.polygon([P(*p) for p in a.poly], fill=(214, 228, 200))
+    for fl in plan.floors[1:]:
+        if fl.is_room:
+            continue
+        col = tuple(int(c + (255 - c) * 0.55) for c in _fallback_colour(fl.want))
+        if fl.region.poly is not None:
+            d.polygon([P(*p) for p in fl.region.poly], fill=col)
+        else:
+            for (x, y), r in zip(fl.region.line, fl.region.radii):
+                X, Y = P(x, y); rr = r * px
+                d.ellipse([X - rr, Y - rr, X + rr, Y + rr], fill=col)
     for i, r in enumerate(sc.rooms):
         d.polygon([P(*p) for p in r.poly], fill=ROOM_COLOURS[i % len(ROOM_COLOURS)])
+    # Paths run off the map edge; keep the margins clear for the grid numbers.
+    bg = (250, 250, 247)
+    for box in ([0, 0, W + 2 * m, m - 1], [0, m + H + 1, W + 2 * m, H + 2 * m], [0, 0, m - 1, H + 2 * m], [m + W + 1, 0, W + 2 * m, H + 2 * m]):
+        d.rectangle(box, fill=bg)
     for x in range(sc.width + 1):
         d.line([P(x, 0), P(x, sc.height)], fill=(205, 205, 200), width=1)
         if x < sc.width and (x % 2 == 0 or px >= 40):

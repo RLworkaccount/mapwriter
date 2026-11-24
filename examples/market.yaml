@@ -1,0 +1,48 @@
+# A small market square where two roads meet, with a muddy patch and a lawn.
+# Shows v0.2 outdoor ground: rough soft-edged areas, circles and paths along a line.
+# Render with:  mapwriter render examples/market.yaml -o out
+name: Crossroads Market
+grid: { width: 26, height: 20, px_per_square: 140 }
+seed: 7
+ground: grass
+
+areas:
+  - name: square
+    circle: [13, 10, 6]
+    floor: cobblestone
+    rough: 0.3
+    soft: 0.15
+  - name: mud
+    shape: [[2, 13], [7, 12], [8, 16], [4, 18], [1, 17]]
+    floor: dirt
+    rough: 0.5
+    smooth: true
+    soft: 0.4
+
+paths:
+  - name: north road
+    points: [[11, 0], [12, 2], [12.5, 4.5]]
+    width: 2.5
+    floor: dirt path
+  - name: east road
+    points: [[18.5, 9], [21, 8], [23.5, 9.5], [26, 9]]
+    width: 2.5
+    floor: dirt path
+  - name: footpath
+    points: [[9, 14.5], [6, 16], [3, 19], [2, 20]]
+    width: 1
+    rough: 0.15
+    floor: dirt path
+
+props:
+  - { want: market stall, at: [9, 6], label: fishmonger }
+  - { want: blue market stall, at: [14, 6], label: cloth }
+  - { want: market stall, at: [9, 12], rot: 180, label: baker }
+  - { want: barrel, at: [12, 11] }
+  - { want: crate, at: [13, 11] }
+  - { want: oak tree, at: [20, 13], size: [3, 3] }
+  - { want: oak tree, at: [2, 3], size: [2, 2] }
+  - { want: lantern, at: [13, 9] }
+
+notes:
+  - { at: [10.5, 7], text: "Fishmonger Brannoc. Yesterday's catch, cheap." }

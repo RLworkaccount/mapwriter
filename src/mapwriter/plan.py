@@ -11,7 +11,7 @@ import random
 from dataclasses import dataclass, field
 
 from .assets.index import Asset, Index
-from .geometry import (distance_to_segment, joint_shape, light_area, merge_walls, on_wall, reachable,
+from .geometry import (Region, distance_to_segment, path_strip, rough_outline, joint_shape, light_area, merge_walls, on_wall, reachable,
                        wall_junctions)
 from .scene import Scene, Prop, Light, Opening, Room, SceneError
 
@@ -43,6 +43,11 @@ class Floor:
     asset: Asset | None
     soft: float = 0.0
     is_room: bool = False
+    region: Region | None = None              # the exact outline painted; set for every floor
+
+    def __post_init__(self):
+        if self.region is None:
+            self.region = Region(poly=self.poly)
 
 
 @dataclass
@@ -122,8 +127,14 @@ def build(scene: Scene, index: Index) -> Plan:
 
     W, H = scene.width, scene.height
     plan.floors.append(Floor("ground", [(0, 0), (W, 0), (W, H), (0, H)], scene.ground, floor_asset(scene.ground)))
+    # Paths go down first, so a road runs under the square or yard it leads into.
+    for p in scene.paths:
+        strip = path_strip(p.points, p.width, p.rough, random.Random(f"{seed}:path:{p.name}"), p.curve)
+        plan.floors.append(Floor(p.name, None, p.floor, floor_asset(p.floor), p.soft, region=strip))
     for a in scene.areas:
-        plan.floors.append(Floor(a.name, a.poly, a.floor, floor_asset(a.floor), a.soft))
+        rnd_edge = random.Random(f"{seed}:area:{a.name}")
+        outline = rough_outline(a.poly, a.rough, rnd_edge, a.smooth)
+        plan.floors.append(Floor(a.name, outline, a.floor, floor_asset(a.floor), a.soft))
     for r in scene.rooms:
         if r.floor:
             plan.floors.append(Floor(r.name, r.poly, r.floor, floor_asset(r.floor), 0.0, True))
