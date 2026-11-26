@@ -379,6 +379,43 @@ def stall(w=3, cloth=(190, 70, 70)):
     return _done(im)
 
 
+def campfire():
+    im = _new(1, 1); d = ImageDraw.Draw(im); s = S * SS
+    for k in range(8):
+        a = 2 * math.pi * k / 8; x, y = s / 2 + math.cos(a) * s * .32, s / 2 + math.sin(a) * s * .32; r = s * .09
+        d.ellipse([x - r, y - r, x + r, y + r], fill=(118, 112, 106, 255), outline=(66, 62, 58, 255), width=6)
+    for a in (0.3, 1.9, 3.4):
+        d.line([s / 2 - math.cos(a) * s * .2, s / 2 - math.sin(a) * s * .2, s / 2 + math.cos(a) * s * .2, s / 2 + math.sin(a) * s * .2],
+               fill=(96, 62, 36, 255), width=int(s * .07))
+    for k, c in enumerate([(255, 120, 40), (255, 180, 60), (255, 230, 120)]):
+        r = s * (.14 - k * .04)
+        d.ellipse([s / 2 - r, s / 2 - r, s / 2 + r, s / 2 + r], fill=c + (255,))
+    return _done(im)
+
+
+def log(n=2, wood=(112, 76, 46)):
+    im = _new(n, 1); d = ImageDraw.Draw(im); s = S * SS
+    d.rounded_rectangle([s * .08, s * .3, n * s - s * .08, s * .7], radius=int(s * .2), fill=wood + (255,), outline=_shade(wood, .5) + (255,), width=8)
+    d.ellipse([n * s - s * .3, s * .3, n * s - s * .08, s * .7], fill=_shade(wood, 1.35) + (255,), outline=_shade(wood, .5) + (255,), width=6)
+    return _done(im)
+
+
+def well_base(stone=(130, 126, 120)):
+    im = _new(2, 2); d = ImageDraw.Draw(im); s = S * SS
+    d.ellipse([s * .2, s * .2, s * 1.8, s * 1.8], fill=stone + (255,), outline=_shade(stone, .45) + (255,), width=14)
+    d.ellipse([s * .55, s * .55, s * 1.45, s * 1.45], fill=(34, 52, 66, 255), outline=_shade(stone, .6) + (255,), width=10)
+    return _done(im)
+
+
+def well_top(wood=(122, 80, 48)):
+    """The roof and winch of the well: drawn above tokens, as a separate layer."""
+    im = _new(2, 2); d = ImageDraw.Draw(im); s = S * SS
+    d.rectangle([s * .1, s * .62, s * 1.9, s * 1.38], fill=(150, 62, 48, 235), outline=(90, 36, 28, 255), width=10)
+    d.line([s * .1, s, s * 1.9, s], fill=(90, 36, 28, 255), width=10)
+    d.line([s * .5, s, s * 1.5, s], fill=wood + (255,), width=int(s * .08))
+    return _done(im)
+
+
 # ------------------------------------------------------------------ pack
 def build_pack(out_dir: str | Path) -> int:
     out = Path(out_dir)
@@ -452,4 +489,8 @@ def build_pack(out_dir: str | Path) -> int:
     save(f"{N}/Trees/Tree_Oak_Green_3x3.png", tree(size=3, seed=2))
     save("Market/Stalls/Market_Stall_Red_3x2.png", stall(3))
     save("Market/Stalls/Market_Stall_Blue_3x2.png", stall(3, (60, 90, 160)))
+    save(f"{N}/Campfires/Campfire_Stone_Ring_1x1.png", campfire())
+    save(f"{N}/Logs/Log_Wood_2x1.png", log(2))
+    save("Structures/Wells/Well_Stone_Base_2x2.png", well_base())
+    save("Structures/Wells/Well_Stone_Top_2x2.png", well_top())
     return sum(1 for p in out.rglob("*") if p.suffix in (".png", ".jpg"))

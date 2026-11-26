@@ -2,6 +2,19 @@
 
 Walls become line_of_sight polylines, doors become closed portals and windows
 become open portals (light and sight pass through). All units are grid squares.
+
+Notes from reading the importer's code (Universal Battlemap Importer 6.1, Foundry v14):
+- It sets each light's colour strength to 0.05 x intensity, so an intensity of 0.8
+  gives an almost invisible tint. We write intensity scaled up (LIGHT_SCALE) so the
+  colour lands at about half our strength, close to Foundry's own default of 0.5.
+- A portal becomes one door wall, so a double door is written as two portals that
+  open on their own, as in Foundry.
+- Secret doors are left as plain wall in the file. The format has no secret door,
+  and a normal door would show players where it is. Make it a secret door in Foundry
+  by hand (the check image marks it in purple).
+- Windows come in as walls that block movement and let sight and light through
+  only from close by (10 ft), unless "Openable Windows" is ticked in the importer's
+  settings, which makes them doors.
 """
 from __future__ import annotations
 
@@ -22,21 +35,32 @@ def _resample(x0, y0, x1, y1, step=0.5):
     return [{"x": round(x0 + (x1 - x0) * i / n, 4), "y": round(y0 + (y1 - y0) * i / n, 4)} for i in range(n + 1)]
 
 
-def uvtt_data(plan: Plan, image: Image.Image | None, fmt="webp", quality=88, step=2.0):
+LIGHT_SCALE = 10.0     # importer colour strength = 0.05 * intensity, so 10 x 0.8 -> 0.4
+
+
+def _portal(a, b, closed):
+    (ax, ay), (bx, by) = a, b
+    return {"position": {"x": (ax + bx) / 2, "y": (ay + by) / 2},
+            "bounds": [{"x": ax, "y": ay}, {"x": bx, "y": by}],
+            "rotation": 0 if ay == by else math.pi / 2, "closed": closed, "freestanding": False}
+
+
+def uvtt_data(plan: Plan, image: Image.Image | None, fmt="webp", quality=88, step=2.0, light_scale=LIGHT_SCALE):
     sc = plan.scene
     # For sight, every opening is a gap; windows and doors come back as portals.
     segs = merge_walls(plan.raw_walls, [o for o, _ in plan.openings if o.kind != "secret"])
     los = [_resample(*s, step=step) for s in segs]
     portals = []
     for o, _ in plan.openings:
-        if o.kind == "arch":
+        if o.kind in ("arch", "secret"):
             continue
-        (ax, ay), (bx, by) = o.a, o.b
-        portals.append({"position": {"x": (ax + bx) / 2, "y": (ay + by) / 2},
-                        "bounds": [{"x": ax, "y": ay}, {"x": bx, "y": by}],
-                        "rotation": 0 if o.horizontal else math.pi / 2,
-                        "closed": o.kind != "window", "freestanding": False})
-    lights = [{"position": {"x": L.at[0], "y": L.at[1]}, "range": L.radius, "intensity": round(L.intensity, 2),
+        if o.kind == "double":
+            (ax, ay), (bx, by) = o.a, o.b
+            mid = ((ax + bx) / 2, (ay + by) / 2)
+            portals += [_portal(o.a, mid, True), _portal(mid, o.b, True)]
+        else:
+            portals.append(_portal(o.a, o.b, o.kind != "window"))
+    lights = [{"position": {"x": L.at[0], "y": L.at[1]}, "range": L.radius, "intensity": round(L.intensity * light_scale, 2),
                "color": "ff%02x%02x%02x" % tuple(L.colour), "shadows": True} for L in plan.lights]
     data = {"format": 0.3,
             "resolution": {"map_origin": {"x": 0, "y": 0}, "map_size": {"x": sc.width, "y": sc.height},

@@ -50,6 +50,8 @@ IRREGULAR = {"shelves": "shelf", "benches": "bench", "boxes": "box", "glasses": 
 def singular(w: str) -> str:
     if w in IRREGULAR:
         return IRREGULAR[w]
+    if len(w) > 5 and w.endswith(("ches", "shes", "xes")):
+        return w[:-2]                       # bushes, benches, boxes
     if len(w) > 4 and w.endswith("ies"):
         return w[:-3] + "y"
     if len(w) > 3 and w.endswith("s") and not w.endswith("ss") and not w.endswith("us"):
