@@ -348,6 +348,45 @@ class Index:
         # Also loose: only a part of the thing, such as a tree stump for 'tree'.
         return ws[-1] not in asset.all_words or bool((asset.all_words & PART_WORDS) - set(ws))
 
+    # Packs such as Forgotten Adventures split some pieces into a base and a top
+    # (Display_Case_Base_* and Display_Case_Top_*): the top is drawn above tokens.
+    LAYER_PAIRS = (("Base", "Top"), ("Bottom", "Top"), ("Lower", "Upper"))
+
+    def top_piece(self, asset: Asset, seed: int = 0) -> Asset | None:
+        """The matching top piece for a base piece, from the same folder, or None."""
+        if asset is None:
+            return None
+        folder, name = os.path.split(asset.rel)
+        stem, ext = os.path.splitext(name)
+        toks = stem.split("_")
+        for low, high in self.LAYER_PAIRS:
+            if low not in toks:
+                continue
+            i = toks.index(low)
+            exact = "_".join(toks[:i] + [high] + toks[i + 1:]) + ext
+            rel = f"{folder}/{exact}" if folder else exact
+            hit = next((a for a in self.assets if a.pack == asset.pack and a.rel == rel), None)
+            if hit is not None:
+                return hit
+            # Otherwise the best sibling that shares the name before the split and the footprint.
+            head = toks[:i]
+            best, score = [], -1
+            for a in self.assets:
+                if a.pack != asset.pack or os.path.dirname(a.rel) != folder or a is asset:
+                    continue
+                t = os.path.splitext(os.path.basename(a.rel))[0].split("_")
+                if high not in t or t[:i] != head or (asset.footprint and a.footprint != asset.footprint):
+                    continue
+                shared = len(set(t) & set(toks))
+                if shared > score:
+                    best, score = [a], shared
+                elif shared == score:
+                    best.append(a)
+            if best:
+                best.sort(key=lambda a: a.rel)
+                return random.Random(f"{seed}:{asset.rel}").choice(best)
+        return None
+
     def pick(self, want: str, kind: str | None = "prop", size=None, seed: int = 0, family_seed: int | None = None):
         """Choose one asset: a seeded pick among the near-best matches.
 

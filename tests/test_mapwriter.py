@@ -474,3 +474,148 @@ def test_2mt_names_dpi_folders_and_sized_textures(tmp_path):
     assert idx.loose("oak tree", stump)                                         # a stump is only part of a tree
     fill = Index(assets + [describe("Oak_Tree_3x3.png", "Starter", "/s")])
     assert fill.pick("oak tree").pack == "Starter"
+
+
+# ------------------------------------------------------------------ v0.3: templates, briefs, replies
+def test_templates_make_clean_scenes(starter):
+    from mapwriter import templates
+    from mapwriter.yamlout import dump
+    import yaml
+    for kind in templates.names():
+        seen = set()
+        for option in range(3):
+            data = templates.make(kind, option, seed=1)
+            text = dump(data)
+            assert yaml.safe_load(text) == data
+            plan = build(parse(data), starter)
+            assert not plan.warnings, (kind, option, plan.warnings)
+            seen.add(text)
+        assert len(seen) == 3, f"{kind}: the three options should differ"
+    with pytest.raises(ValueError):
+        templates.make("spaceship")
+    assert templates.make("inn")["rooms"]       # aliases work
+
+
+def test_tavern_template_seats_chairs_at_tables():
+    from mapwriter import templates
+    props = templates.make("tavern", 0)["props"]
+    tables = {tuple(p["at"]) for p in props if p["want"] == "round table"}
+    chairs = [p for p in props if p["want"] == "chair" and "at" in p]
+    assert tables and chairs
+    for c in chairs:
+        x, y = c["at"]
+        assert (x + 1, y) in tables or (x - 1, y) in tables
+        assert c["rot"] == (270 if (x + 1, y) in tables else 90)     # facing the table
+
+
+def test_new_writes_options_and_sheet(tmp_path, starter):
+    from mapwriter import templates
+    from mapwriter.talk import write_options
+    scenes = [("", templates.make("shop", i)) for i in range(3)]
+    res = write_options(scenes, starter, tmp_path, "shop")
+    assert [p.name for p in res["files"]] == ["shop-a.yaml", "shop-b.yaml", "shop-c.yaml"]
+    assert res["sheet"].exists()
+
+
+def test_describe_brief_has_words_and_template(starter):
+    from mapwriter.talk import describe_brief, guess_template
+    assert guess_template("a smoky old inn on the moor") == "tavern"
+    assert guess_template("a mossy glade") == "clearing"
+    b = describe_brief("a smoky old inn on the moor", starter, options=3)
+    assert "3 different layouts" in b and "The Wayside Inn" in b
+    assert "barrel" in b and "Scene format" in b
+    assert "seating" not in b.split("## Words")[1].split("##")[0]     # folder names left out
+
+
+def test_reply_parsing_and_fix_brief(tmp_path, starter):
+    from mapwriter import templates
+    from mapwriter.talk import scenes_in_reply, write_options, fix_brief
+    from mapwriter.yamlout import dump
+    good = dump(templates.make("house", 0))
+    bad = good.replace("grid: { width: 16", "grid: { width: x16")
+    reply = (f"Two layouts.\n\nA:\n```yaml\n{good}```\nB:\n```yaml\n{bad}```\n"
+             "A snippet:\n```yaml\nprops: [{want: chair}]\n```\nBroken:\n```yaml\ngrid: [\n```\n")
+    found = scenes_in_reply(reply)
+    assert len(found) == 3                                 # the snippet is skipped
+    assert found[2][1] is None and "YAML" in found[2][2]
+    res = write_options([(t, d) for t, d, e in found if d], starter, tmp_path, "home", keep_text=True)
+    assert res["files"][0].read_text() == good
+    fb = fix_brief(res["problems"])
+    assert fb and "home-b.yaml" in fb and "home-a.yaml" not in fb
+
+
+def test_apply_edit_keeps_previous(tmp_path, starter):
+    from mapwriter import templates
+    from mapwriter.talk import apply_edit, edit_brief
+    from mapwriter.yamlout import dump
+    p = tmp_path / "house.yaml"
+    p.write_text(dump(templates.make("house", 1)))
+    brief = edit_brief(p, "a bigger bedroom", starter)
+    assert "a bigger bedroom" in brief and "Miller's Cottage" in brief
+    new = p.read_text().replace("seed: 2", "seed: 9")
+    r = apply_edit(f"Changed the seed.\n```yaml\n{new}```", p, starter, tmp_path)
+    assert p.read_text() == new and r["previous"].exists()
+    assert any("seed: 9" in l for l in r["changed_lines"]) and r["sheet"].exists()
+    with pytest.raises(SceneError):
+        apply_edit("no yaml here", p, starter, tmp_path)
+
+
+def test_cli_new_describe_apply(tmp_path, capsys, starter):
+    from mapwriter.cli import main
+    idx = tmp_path / "i.json"; starter.save(idx)
+    main(["new", "clearing", "-o", str(tmp_path / "s"), "-n", "2", "-i", str(idx)])
+    assert (tmp_path / "s" / "clearing-b.yaml").exists() and (tmp_path / "s" / "clearing-options.png").exists()
+    main(["describe", "a fishing village market", "-o", str(tmp_path / "s"), "-i", str(idx)])
+    assert "market" in (tmp_path / "s" / "brief.md").read_text()
+    reply = tmp_path / "reply.md"
+    reply.write_text("```yaml\n" + (tmp_path / "s" / "clearing-a.yaml").read_text() + "```\n")
+    main(["apply", str(reply), "-o", str(tmp_path / "r"), "-i", str(idx)])
+    out = capsys.readouterr().out
+    assert "no problems" in out
+
+
+def test_layered_base_gets_its_top(starter):
+    a = starter.pick("well")
+    assert a is not None and "Base" in a.rel
+    top = starter.top_piece(a)
+    assert top is not None and "Top" in top.rel
+    sc = parse({"name": "w", "grid": {"width": 6, "height": 6}, "props": [{"want": "well", "at": [2, 2]}]})
+    plan = build(sc, starter)
+    assert [p.part for p in plan.props] == ["", "top"]
+    assert plan.props[1].layer > plan.props[0].layer and not plan.props[1].shadow
+    sc = parse({"name": "w", "grid": {"width": 6, "height": 6}, "props": [{"want": "well", "at": [2, 2], "top": False}]})
+    assert len(build(sc, starter).props) == 1
+
+
+def test_top_piece_matches_fa_names(fa_names):
+    idx = Index([describe(n, "FA", "/fa") for n in fa_names])
+    base = next(a for a in idx.assets if "Display_Case_Base_Wood_Dark_C_2x2" in a.rel)
+    top = idx.top_piece(base)
+    assert top is not None and "Display_Case_Top" in top.rel and top.footprint == [2, 2]
+
+
+def test_uvtt_foundry_fixes(starter):
+    from mapwriter.export.uvtt import uvtt_data, LIGHT_SCALE
+    sc = parse({"name": "d", "grid": {"width": 10, "height": 8},
+                "rooms": [{"name": "Hall", "box": [1, 1, 9, 7],
+                           "doors": [{"wall": "south", "at": 3, "kind": "double"}, {"wall": "north", "at": 4, "kind": "secret"}],
+                           "windows": [{"wall": "east", "at": 3}]}],
+                "lights": [{"at": [5, 4], "intensity": 0.8}]})
+    d = uvtt_data(build(sc, starter), None)
+    doors = [p for p in d["portals"] if p["closed"]]
+    assert len(doors) == 2                                  # the double door is two leaves; the secret door is not a portal
+    assert {(p["bounds"][0]["x"], p["bounds"][1]["x"]) for p in doors} == {(3, 4), (4, 5)}
+    assert len([p for p in d["portals"] if not p["closed"]]) == 1
+    assert d["lights"][0]["intensity"] == pytest.approx(0.8 * LIGHT_SCALE)
+
+
+def test_sketch_light_rings_optional(starter):
+    from mapwriter.render.sketch import sketch
+    sc = parse({"name": "l", "grid": {"width": 8, "height": 8}, "lights": [{"at": [4, 4], "radius": 3}]})
+    plan = build(sc, starter)
+    with_rings, without = sketch(plan, 24), sketch(plan, 24, rings=False)
+    assert with_rings.size == without.size and with_rings.tobytes() != without.tobytes()
+
+
+def test_plural_folding():
+    assert naming.singular("bushes") == "bush" and naming.singular("benches") == "bench" and naming.singular("boxes") == "box"
