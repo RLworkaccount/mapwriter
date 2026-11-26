@@ -8,6 +8,8 @@ MapWriter turns a YAML scene file plus the user's own asset folders into painted
 - Never commit, bundle or upload third-party asset packs (Forgotten Adventures, 2-Minute Tabletop, etc.). The tool reads them in place. Test with the code-drawn starter pack (`mapwriter starter-pack`) or with lists of file names only (`tests/fa_names_sample.txt`).
 - No Forgotten Adventures images in the repo or anywhere public, not even screenshots of maps made with FA art (Robbie, 23 Nov 2026). FA is for personal use only. Public pictures use the starter art, or 2-Minute Tabletop art (CC BY-NC 4.0) with a credit line.
 - No AI-generated images anywhere in the project. Starter art is drawn in code (`src/mapwriter/testart.py`).
+- No AI API calls or API keys in MapWriter (owner's rule, 26 Nov 2026). "Talk to it" features write briefs for the user's own assistant and read its reply back.
+- No personal data in anything published: no local paths, machine names, addresses or campaign details in code, tests, docs or PR text.
 - Plain, concrete writing in docs and messages.
 - Think big when proposing features (Robbie's standing rule), then cut a sensible next milestone. See ROADMAP.md.
 
@@ -29,6 +31,9 @@ src/mapwriter/
   export/keymap.py   GM key and wall/door/light check images
   build.py           high-level steps used by the CLI
   cli.py             `mapwriter` command
+  templates.py       tavern, shop, house, market, clearing layouts (`mapwriter new`)
+  talk.py            briefs for the user's own AI assistant and reading replies (describe, edit, apply); never calls an AI service
+  yamlout.py         scene data -> readable YAML
   testart.py         starter pack drawn in code
 examples/            tavern.yaml, chapel.yaml, market.yaml, garden-party.yaml (must render with the starter pack alone)
 docs/                scene format, asset packs, describing maps to an AI
@@ -52,5 +57,5 @@ Look at the rendered images (scale them down first) before saying a visual chang
 
 - Coordinates are grid squares, x right, y down. Openings sit on grid lines. Prop `at` is the top-left square; `rot` is clockwise, 0 = back to the north.
 - FA: 200 px per square, wall strips are `*_Straight_Path.webp`, doors and windows are 1x1 images with the door drawn as a band across the middle.
-- `.dd2vtt`: format 0.3, units in squares, walls as `line_of_sight` polylines with points at least 0.4 squares apart (the importer thins closer points), doors are `closed: true` portals, windows `closed: false`, arches are plain gaps.
+- `.dd2vtt`: format 0.3, units in squares, walls as `line_of_sight` polylines with points at least 0.4 squares apart (the importer thins closer points), doors are `closed: true` portals, windows `closed: false`, arches are plain gaps. The importer sets light colour strength to 0.05 x intensity, so intensity is written x10; double doors are two portals; secret doors stay plain wall.
 - `Image.radial_gradient` is about 181 (not 255) at the edge midpoints; the light sprite divides by the measured value.

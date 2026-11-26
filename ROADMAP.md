@@ -6,7 +6,7 @@ The aim: a map studio you talk to. Describe a place, pick from a few layouts, ed
 |---|---|---|
 | **v0.1** | Foundations (done) | Asset index with FA and generic naming, scene files, checks, sketch, painter with day and night lighting, GM key, check image, `.dd2vtt` export, starter art, tests |
 | **v0.2** | Outdoors (in progress) | Areas with soft edges, paths along a line, water with banks, scatter rules (trees, rocks, flowers, clutter by density), 2-Minute Tabletop adapter, market and garden scenes |
-| v0.3 | Talk to it | `mapwriter describe "..."` and `mapwriter edit scene.yaml "..."` using the user's own AI key, three layout options to choose from, templates (tavern, shop, market square, clearing, house) |
+| **v0.3** | Talk to it (in progress) | Templates (tavern, shop, house, market square, clearing) with three layouts to choose from, `describe` and `edit` briefs for the AI assistant you already use (no API key), `apply` to check and sketch the replies |
 | v0.4 | Any pack | Picture-based tagging for packs with vague names, style matching so mixed packs look consistent, an asset browser page |
 | v0.5 | Whole places | Generators for buildings with sensible room layouts, multi-storey houses with aligned stairs, dungeons, caves, villages |
 | v0.6 | Ready to play | Full Foundry scenes: levels, map notes linked to journal entries, ambient sounds, starting tokens; story-aware GM keys made from an adventure document |
@@ -28,11 +28,24 @@ v0.2 cuts that to the parts every outdoor map needs, in this order. Each lands a
 
 Later: hills and cliffs, bridges and fords, sight-blocking trees, seasons.
 
+## v0.3 plan: Talk to it
+
+The long view: a map studio you talk to. Say "a smugglers' cove with a sea cave", see three layouts, say "move the jetty north and add fog", and watch the sketch change, with the assistant reading MapWriter's warnings and fixing its own mistakes. It works with whatever assistant you already use, needs no API key and sends nothing anywhere by itself. Later it learns your table's taste (how cluttered, how big rooms run), keeps a history of versions to step back through, and talks to the web editor and the MCP server in v0.7.
+
+v0.3 cuts that to:
+
+1. **Templates** (done): `mapwriter new tavern|shop|house|market|clearing` lays out a scene from a size and a seed, three layout families each, with chairs set at tables, bars with stools, clutter piled in store rooms. Every option renders with the starter pack alone and no warnings.
+2. **Briefs** (done): `mapwriter describe "..."` and `mapwriter edit scene.yaml "..."` write a brief for the user's own assistant: the request, layout rules, the words the user's packs use, a starting template and the scene format.
+3. **Replies** (done): `mapwriter apply reply.md` saves every scene in the reply, checks each against the packs, draws them side by side and writes a fix-up brief for any problems. `--edit` saves a change and keeps the previous version with a before-and-after sketch.
+4. **Leftover v0.1 gaps** (done): layered base and top pieces, fainter light rings in the sketch, and Foundry importer fixes (double doors, light colour strength, secret doors).
+
+Later in v0.3 or after: more templates (temple, guard post, cave mouth, ship deck), a template-aware `describe` that fills a template's options from the description, and an MCP server so assistants call MapWriter directly (v0.7).
+
 ## Known gaps in v0.1
 
 - Indoor scenes only: no scatter, no curved or diagonal walls.
 - Wall corners are plain overlaps; FA corner pieces aren't used yet.
 - Lights are clipped to their room's outline, not traced against walls, so a light only spills through a door in Foundry, not in the baked image.
 - Props are placed on whole squares when auto-placed; no clustering ("a pile of crates") yet.
-- Layered assets (FA fireplaces with separate base and top pieces) are drawn from one piece.
-- `.dd2vtt` export is checked against the format, but each Foundry importer version should be spot-checked.
+- Layered assets: base and top pieces are now paired by name (v0.3). FA's own fireplace and other layered names still need a check against the full pack.
+- `.dd2vtt` export is checked against the format and against the Universal Battlemap Importer's code (6.1, Foundry v14), but each importer version should be spot-checked. The importer has no secret doors, and brings windows in as walls that only let sight through from within 10 ft.

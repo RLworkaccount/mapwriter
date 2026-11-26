@@ -1,4 +1,4 @@
-# Scene file format (v0.2)
+# Scene file format (v0.3)
 
 A scene file is YAML. All positions and sizes are in grid squares (5 ft each). `x` runs right and `y` runs down; `[0, 0]` is the top-left corner of the map. Walls, doors and windows sit on grid lines, between squares.
 
@@ -153,8 +153,11 @@ props:
 | `vary` | `true` to pick different art for each copy |
 | `layer` | Draw order: 0 rugs, 1 furniture, 2 small items on top. Worked out for you if left out |
 | `scale`, `flip`, `shadow` | Fine adjustments |
+| `top` | `false` to leave off the pack's matching top piece (see below) |
 
 Words that match a floor texture but no prop (for example `red rug`) are drawn as a rug of that texture, cut to `size`.
+
+Some packs split a piece into a base and a top, for example Forgotten Adventures' `Display_Case_Base_*` and `Display_Case_Top_*`, or the starter pack's well and its roof. When the art chosen for a prop is a base piece, MapWriter adds the matching top from the same folder, drawn above the furniture layer and without a second shadow. Names with `Base`/`Top`, `Bottom`/`Top` or `Lower`/`Upper` are paired; an exact name match wins, otherwise the closest name with the same footprint.
 
 ## Scatter
 

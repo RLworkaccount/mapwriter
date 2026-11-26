@@ -29,10 +29,10 @@ def slug(name: str) -> str:
     return s.strip("-") or "map"
 
 
-def write_sketch(plan: Plan, out_dir, px=48) -> Path:
+def write_sketch(plan: Plan, out_dir, px=48, rings=True) -> Path:
     out = Path(out_dir); out.mkdir(parents=True, exist_ok=True)
     p = out / f"{slug(plan.scene.name)}-sketch.png"
-    sketch(plan, px).save(p)
+    sketch(plan, px, rings).save(p)
     return p
 
 

@@ -8,6 +8,7 @@ Take `Furniture/Tables/Round_Tables/Table_Round_Wood_Ashen_A2_2x2.webp`:
 
 - **Words** come from every folder and the file name: furniture, table, round, wood, ashen. Variant codes like `A2` or `03` are dropped and plurals are folded (`Tables` to `table`).
 - **Footprint** comes from a `_WxH` token: 2 by 2 squares. Without one, it is worked out from the image size and the pack's pixels per square.
+- **Layers**: a file with `Base` in its name (or `Bottom`, `Lower`) is drawn with its partner `Top` (or `Upper`) from the same folder, if there is one.
 - **Kind** comes from words: `door`, `window`, `wall` (straight wall strips, called paths in FA), `floor` (tileable textures with no footprint), `overlay`, `roof`, `effect`, or `prop` for everything else.
 
 ## Packs that work well

@@ -19,7 +19,7 @@ def font(size: int):
     return ImageFont.load_default()
 
 
-def sketch(plan: Plan, px: int = 48) -> Image.Image:
+def sketch(plan: Plan, px: int = 48, rings: bool = True) -> Image.Image:
     sc = plan.scene
     m = int(px * 0.9)       # margin for grid numbers
     top = int(px * 0.8)     # title band
@@ -65,6 +65,8 @@ def sketch(plan: Plan, px: int = 48) -> Image.Image:
 
     # props
     for p in sorted(plan.props, key=lambda p: p.layer):
+        if p.part == "top":
+            continue                      # drawn with its base
         x0, y0, x1, y1 = p.box
         missing = p.asset is None
         fill = (250, 214, 214) if missing else ((226, 210, 236) if p.layer == 0 else (255, 255, 255))
@@ -93,12 +95,20 @@ def sketch(plan: Plan, px: int = 48) -> Image.Image:
                "window": (230, 190, 20), "arch": (60, 140, 220)}.get(o.kind, (0, 0, 0))
         d.line([P(*o.a), P(*o.b)], fill=col, width=max(6, px // 5))
 
-    # lights
+    # lights: a dot for each, and a faint dashed ring for its reach (rings=False leaves them out)
+    if rings and plan.lights:
+        ov = Image.new("RGBA", im.size, (0, 0, 0, 0))
+        do = ImageDraw.Draw(ov)
+        for L in plan.lights:
+            x, y = P(*L.at); rr = L.radius * px
+            n = max(16, int(rr / 6))
+            for k in range(0, n, 2):
+                do.arc([x - rr, y - rr, x + rr, y + rr], 360 * k / n, 360 * (k + 1) / n, fill=(220, 160, 30, 90), width=1)
+        im = Image.alpha_composite(im.convert("RGBA"), ov).convert("RGB")
+        d = ImageDraw.Draw(im)
     for L in plan.lights:
         x, y = P(*L.at); r = max(4, px // 7)
         d.ellipse([x - r, y - r, x + r, y + r], fill=(255, 200, 40), outline=(160, 110, 0), width=2)
-        rr = L.radius * px
-        d.ellipse([x - rr, y - rr, x + rr, y + rr], outline=(240, 190, 60), width=1)
 
     # room names and notes
     for r in sc.rooms:

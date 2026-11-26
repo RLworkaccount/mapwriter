@@ -126,6 +126,7 @@ class Prop:
     vary: bool = False
     shadow: bool = True
     flip: bool = False
+    top: bool = True              # draw the pack's matching top piece, if it has one
 
 
 @dataclass
@@ -413,7 +414,7 @@ def parse(data: dict, source: str | None = None) -> Scene:
             size=size, rot=float(p.get("rot", 0)), room=p.get("in"), along=p.get("along"),
             count=int(p.get("count", 1)), label=p.get("label"), light=p.get("light"),
             scale=float(p.get("scale", 1.0)), layer=p.get("layer"), vary=bool(p.get("vary", False)),
-            shadow=bool(p.get("shadow", True)), flip=bool(p.get("flip", False))))
+            shadow=bool(p.get("shadow", True)), flip=bool(p.get("flip", False)), top=bool(p.get("top", True))))
         pr = sc.props[-1]
         if pr.at is None and pr.centre is None and pr.room is None:
             raise SceneError(f"{what} ({pr.want or pr.file}): give at: [x, y], centre: [x, y], or in: <room>")
