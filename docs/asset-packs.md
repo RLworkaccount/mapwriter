@@ -27,7 +27,7 @@ If the only match is through a similar word (a `stall` that came back as a booth
 | Pack | Notes |
 |---|---|
 | Forgotten Adventures (FA) | The naming above is FA's, so it works as-is. 200 px per square. Wall strips are the `*_Straight_Path` files. |
-| 2-Minute Tabletop | Readable names with spaces and numbers (`Crate (Small) 2.png`), which MapWriter reads as they are. Run `mapwriter pack-check` first: it guesses the pack's pixels per square and writes the yaml, including the credit line the CC BY-NC licence asks for. |
+| 2-Minute Tabletop | Readable names such as `Storage - Crate 1 - Dark.png`, read as they are (the item is the word after the category). Packs ship the same art in `300 DPI` and `70 DPI` folders: MapWriter keeps the sharpest copy and reads 300 px per square from the folder name. Textures that name their size (`8x8 dirt texture.jpg`, `Water Tile 1 (8x8).jpg`) tile at that size. Run `mapwriter pack-check --write --credit "..."` on each pack first, for the credit line the CC BY-NC licence asks for. Tried on Grass & Road, River & Water, Forest Floor and Furniture (26 Nov 2026). |
 | Your own art | Name files like `Barrel_Oak_1x1.png`, or add tags. |
 
 ## Checking a new pack

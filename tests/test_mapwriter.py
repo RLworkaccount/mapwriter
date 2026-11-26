@@ -444,3 +444,33 @@ def test_scatter_keeps_canopies_off_buildings_and_furniture(starter):
         assert x1 <= 8 or x0 >= 14 or y1 <= 4 or y0 >= 10 or not any(
             hut.contains(x, y) for x in (x0 + 0.3, x1 - 0.3) for y in (y0 + 0.3, y1 - 0.3))
         assert not (x0 < 4.5 and y0 < 3.5 and x1 > 2.5 and y1 > 2.5)     # the table stays in view
+
+
+# ------------------------------------------------------------------ 2-Minute Tabletop style packs
+def test_2mt_names_dpi_folders_and_sized_textures(tmp_path):
+    from PIL import Image
+    from mapwriter.assets.index import scan
+    files = {"Assets - 300 DPI/Bush 2 - Green 1.png": (300, 300), "Assets - 70 DPI (Roll20)/Bush 2 - Green 1.png": (70, 70),
+             "Assets - 300 DPI/Storage - Crate 1 - Dark.png": (300, 300), "Assets - 300 DPI/Chair - Armchair 1.a.png": (300, 300),
+             "Assets - 300 DPI/Chair - Simple 1 - Dark.png": (300, 300), "Assets/8x8 dirt texture.jpg": (800, 800),
+             "Assets/Water Tile 1 (8x8).jpg": (800, 800), "Assets/Rapids 1 (5x3).png": (500, 300),
+             "Assets - 300 DPI/Tree Stump 1 - Tree.png": (300, 300)}
+    for rel, size in files.items():
+        (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
+        Image.new("RGB", size).save(tmp_path / rel)
+    assets = scan(tmp_path, pack="2MT")
+    by = {a.rel: a for a in assets}
+    assert "Assets - 70 DPI (Roll20)/Bush 2 - Green 1.png" not in by           # the sharper copy is kept
+    assert by["Assets - 300 DPI/Bush 2 - Green 1.png"].ppsq == 300
+    assert by["Assets - 300 DPI/Bush 2 - Green 1.png"].footprint == [1, 1]
+    dirt, water = by["Assets/8x8 dirt texture.jpg"], by["Assets/Water Tile 1 (8x8).jpg"]
+    assert dirt.kind == water.kind == "floor" and dirt.ppsq == water.ppsq == 100
+    assert by["Assets/Rapids 1 (5x3).png"].footprint == [5, 3]
+    idx = Index(assets)
+    assert idx.pick("crate").name == "Storage - Crate 1 - Dark.png"
+    assert idx.pick("chair").name == "Chair - Simple 1 - Dark.png"             # a plain chair before an armchair
+    assert idx.pick("dirt path", "floor") is dirt and idx.pick("water", "floor") is water
+    stump = idx.pick("oak tree")
+    assert idx.loose("oak tree", stump)                                         # a stump is only part of a tree
+    fill = Index(assets + [describe("Oak_Tree_3x3.png", "Starter", "/s")])
+    assert fill.pick("oak tree").pack == "Starter"

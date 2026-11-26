@@ -61,7 +61,7 @@ def cmd_pack_check(args):
         for v in r["vague"]:
             print(f"  - {v}")
     if r["manifest"]:
-        print(f"Wrote {r['manifest']}. Check it, then run: mapwriter index {args.folder}")
+        print(f"Wrote {r['manifest']}. Check it, then run: mapwriter index \"{args.folder}\"")
     elif args.write:
         print("The pack already has a mapwriter-pack.yaml; left it alone.")
 
