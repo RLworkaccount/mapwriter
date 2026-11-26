@@ -125,6 +125,28 @@ rooms:
 - `want: iron door` picks particular art for one opening; `file:` pins an exact file.
 - For a room drawn with `shape`, give openings as `{ from: [x, y], to: [x, y] }`.
 - Rooms that touch share one wall. A door listed on either room cuts through it.
+- `walls:` words pick the art for this room's walls only, for example `walls: wood fence` for a pen in a stone-walled yard. Without it the room uses `style: walls`.
+- `see_through: true` makes the walls glass: they stop movement but let sight and light through (the Foundry export brings them in as windows). Walls whose words say `glass`, `fence` or `railing` are see-through anyway; `see_through: false` turns that off.
+- `wall_thickness` draws the walls thicker or thinner, in squares.
+
+## Free-standing walls
+
+```yaml
+walls:
+  - { from: [0, 3], to: [0, 40] }                           # uses style: walls
+  - { points: [[3, 29], [9, 29], [9, 35]], style: hedge, thickness: 1 }   # an L-shaped hedge
+  - { from: [20, 5], to: [26, 5], style: iron railing }    # see-through: blocks movement only
+```
+
+| Key | Meaning | Default |
+|---|---|---|
+| `from`, `to` | The two ends, on straight lines across or down | |
+| `points` | Instead of `from`/`to`: a run of straight legs through these points | |
+| `style` | Words (or a file name) for the wall art. Strips such as Forgotten Adventures' hedge maze and fence `*_Path` files work | `style: walls` |
+| `see_through` | `true` for glass, fences and railings: movement is blocked, sight and light are not | `true` if the words say glass, fence or railing |
+| `thickness` | How thick it is drawn, in squares. `1` suits a hedge | the usual wall thickness |
+
+Hedges drawn this way block sight in Foundry, so a hedge maze plays like one.
 
 ## Props
 

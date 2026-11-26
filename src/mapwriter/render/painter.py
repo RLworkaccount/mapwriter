@@ -124,19 +124,19 @@ class Painter:
             cv.put(im, cx, cy, shadow=p.shadow and p.layer > 0, op=0.5 if p.layer > 0 else 0.3)
 
     # ------------------------------------------------------------ walls
-    def _wall_strip(self):
-        a = self.plan.wall_asset
+    def _wall_strip(self, a, t):
+        """The wall art turned lengthways and scaled to ``t`` pixels thick, with the
+        scale used (for the joint pieces)."""
         if a is None:
-            return None
+            return None, 1.0
         im = alpha_crop(self.cv.raw(a))
         if im.height > im.width:
             im = im.rotate(90, expand=True)
-        self._wall_band = im.height
-        k = self.t / im.height
-        return im.resize((max(1, round(im.width * k)), self.t), Image.LANCZOS)
+        k = t / im.height
+        return im.resize((max(1, round(im.width * k)), t), Image.LANCZOS), k
 
-    def _plain_strip(self, length):
-        t = self.t
+    def _plain_strip(self, length, t=None):
+        t = t or self.t
         s = Image.new("RGBA", (length, t), (86, 82, 80, 255))
         d = ImageDraw.Draw(s)
         rnd = random.Random(length)
@@ -151,33 +151,35 @@ class Painter:
 
     def walls(self):
         cv = self.cv
-        t = self.t
-        strip = self._wall_strip()
         layer = Image.new("RGBA", cv.img.size, (0, 0, 0, 0))
-        for i, (x0, y0, x1, y1) in enumerate(self.plan.walls):
-            X0, Y0 = cv.P(x0, y0); X1, Y1 = cv.P(x1, y1)
-            L = abs(X1 - X0) + abs(Y1 - Y0) + t
+        # Thick sets (hedges) first, so thin walls and their joints sit on top where they meet.
+        sets = sorted(self.plan.wall_sets, key=lambda ws: -(ws.thickness or 0))
+        for si, ws in enumerate(sets):
+            t = max(4, int(ws.thickness * cv.R)) if ws.thickness else self.t
+            strip, k = self._wall_strip(ws.asset, t)
+            for i, (x0, y0, x1, y1) in enumerate(ws.segs):
+                X0, Y0 = cv.P(x0, y0); X1, Y1 = cv.P(x1, y1)
+                L = abs(X1 - X0) + abs(Y1 - Y0) + t
+                if strip is not None:
+                    s = Image.new("RGBA", (L, t))
+                    xx = -random.Random(f"{si}:{i}").randrange(0, max(1, strip.width - 10))
+                    while xx < L:
+                        ac(s, strip, (xx, 0)); xx += strip.width
+                else:
+                    s = self._plain_strip(L, t)
+                if Y0 == Y1:
+                    ac(layer, s, (min(X0, X1) - t // 2, Y0 - t // 2))
+                else:
+                    ac(layer, s.rotate(90, expand=True), (X0 - t // 2, min(Y0, Y1) - t // 2))
             if strip is not None:
-                s = Image.new("RGBA", (L, t))
-                xx = -random.Random(i).randrange(0, max(1, strip.width - 10))
-                while xx < L:
-                    ac(s, strip, (xx, 0)); xx += strip.width
-            else:
-                s = self._plain_strip(L)
-            if Y0 == Y1:
-                ac(layer, s, (min(X0, X1) - t // 2, Y0 - t // 2))
-            else:
-                ac(layer, s.rotate(90, expand=True), (X0 - t // 2, min(Y0, Y1) - t // 2))
-        if strip is not None:
-            # Joint pieces share the strip's band thickness; scale them the same way.
-            k = t / self._wall_band
-            for x, y, asset, turns in self.plan.wall_joints:
-                im = self.cv.raw(asset)
-                im = im.resize((max(1, round(im.width * k)), max(1, round(im.height * k))), Image.LANCZOS)
-                if turns:
-                    im = im.rotate(-90 * turns, expand=True)
-                X, Y = cv.P(x, y)
-                ac(layer, im, (X - im.width // 2, Y - im.height // 2))
+                # Joint pieces share the strip's band thickness; scale them the same way.
+                for x, y, asset, turns in ws.joints:
+                    im = self.cv.raw(asset)
+                    im = im.resize((max(1, round(im.width * k)), max(1, round(im.height * k))), Image.LANCZOS)
+                    if turns:
+                        im = im.rotate(-90 * turns, expand=True)
+                    X, Y = cv.P(x, y)
+                    ac(layer, im, (X - im.width // 2, Y - im.height // 2))
         a = layer.getchannel("A")
         ao = a.filter(ImageFilter.GaussianBlur(cv.R * 0.22)).point(lambda v: int(min(255, v * 1.4) * 0.55))
         aol = Image.new("RGBA", cv.img.size, (15, 12, 20, 0)); aol.putalpha(ao)

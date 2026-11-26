@@ -40,6 +40,8 @@ v0.3 cuts that to:
 3. **Replies** (done): `mapwriter apply reply.md` saves every scene in the reply, checks each against the packs, draws them side by side and writes a fix-up brief for any problems. `--edit` saves a change and keeps the previous version with a before-and-after sketch.
 4. **Leftover v0.1 gaps** (done): layered base and top pieces, fainter light rings in the sketch, and Foundry importer fixes (double doors, light colour strength, secret doors).
 
+Also in v0.3 (from the Moonrise Garden Party map, 26 Nov 2026): per-room and per-wall art (`walls:` on a room, `style:` on a free wall), glass, fence and railing walls that block movement but not sight or light, hedge walls drawn a square thick that block sight in Foundry, and free walls given as a run of `points`.
+
 Later in v0.3 or after: more templates (temple, guard post, cave mouth, ship deck), a template-aware `describe` that fills a template's options from the description, and an MCP server so assistants call MapWriter directly (v0.7).
 
 ## Known gaps in v0.1

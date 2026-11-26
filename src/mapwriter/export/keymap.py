@@ -45,16 +45,19 @@ def gm_key(plan: Plan, image: Image.Image, width: int = 2000) -> Image.Image:
 
 
 def check_overlay(plan: Plan, image: Image.Image, width: int = 1600) -> Image.Image:
-    """Walls red, doors green, windows yellow, arches blue, light ranges as rings."""
+    """Walls red, doors green, windows and glass walls yellow, arches blue, light ranges as rings."""
     im, R = _scaled(image, plan, width)
     d = ImageDraw.Draw(im)
     for x in range(plan.scene.width + 1):
         d.line([x * R, 0, x * R, im.height], fill=(0, 0, 0), width=1)
     for y in range(plan.scene.height + 1):
         d.line([0, y * R, im.width, y * R], fill=(0, 0, 0), width=1)
-    segs = merge_walls(plan.raw_walls, [o for o, _ in plan.openings if o.kind != "secret"])
-    for x0, y0, x1, y1 in segs:
+    gaps = [o for o, _ in plan.openings if o.kind != "secret"]
+    glass = set(plan.see_through_walls)
+    for x0, y0, x1, y1 in merge_walls([w for w in plan.raw_walls if w not in glass], gaps):
         d.line([x0 * R, y0 * R, x1 * R, y1 * R], fill=(255, 30, 30), width=max(3, int(R * 0.08)))
+    for x0, y0, x1, y1 in merge_walls(list(glass), gaps):          # glass: like a long window
+        d.line([x0 * R, y0 * R, x1 * R, y1 * R], fill=(255, 230, 0), width=max(3, int(R * 0.08)))
     for o, _ in plan.openings:
         col = {"door": (30, 230, 60), "double": (30, 230, 60), "secret": (200, 60, 230),
                "window": (255, 230, 0), "arch": (60, 160, 255)}[o.kind]
