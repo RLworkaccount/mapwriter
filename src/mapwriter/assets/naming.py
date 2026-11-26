@@ -18,7 +18,7 @@ IMAGE_EXTS = {".png", ".webp", ".jpg", ".jpeg"}
 
 # Words that are noise in folder names.
 STOP = {"assets", "asset", "webp", "png", "jpg", "pack", "core", "fa", "the", "and", "of",
-        "misc", "arranged", "base", "settlements", "settlement", "mapmaking", "v1", "free"}
+        "misc", "base", "settlements", "settlement", "mapmaking", "v1", "free"}
 
 # Kind rules: first match wins. Each rule is (kind, words that must appear).
 KIND_RULES = [
@@ -44,7 +44,7 @@ IRREGULAR = {"shelves": "shelf", "benches": "bench", "boxes": "box", "glasses": 
              "torches": "torch", "brushes": "brush", "dishes": "dish", "cases": "case",
              "leaves": "leaf", "knives": "knife", "wolves": "wolf", "mice": "mouse",
              "geese": "goose", "cacti": "cactus", "fungi": "fungus", "stairs": "stairs",
-             "glass": "glass", "moss": "moss", "grass": "grass", "dress": "dress"}
+             "glass": "glass", "christmas": "christmas", "moss": "moss", "grass": "grass", "dress": "dress"}
 
 
 def singular(w: str) -> str:

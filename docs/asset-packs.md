@@ -10,6 +10,18 @@ Take `Furniture/Tables/Round_Tables/Table_Round_Wood_Ashen_A2_2x2.webp`:
 - **Footprint** comes from a `_WxH` token: 2 by 2 squares. Without one, it is worked out from the image size and the pack's pixels per square.
 - **Kind** comes from words: `door`, `window`, `wall` (straight wall strips, called paths in FA), `floor` (tileable textures with no footprint), `overlay`, `roof`, `effect`, or `prop` for everything else.
 
+## How art is picked
+
+A scene asks for things in plain words (`oak tree`, `dirt path`, `crate`). The last word is the thing itself; the others describe it. Among the files that match, MapWriter prefers:
+
+- files named for the thing itself (`Dirt_A_01` for `dirt`, not `Stone_Floor_Dirt`), and whole items over lids, parts and ready-made arrangements;
+- plain versions over seasonal or special ones: a `tree` is not a Christmas tree, an autumn-red tree or a Feywild bush unless the scene says so (`christmas tree`, `red tree`), and plants come green unless a colour is named;
+- for a floor, the ground rather than the route: `dirt path` and `dirt road` look for dirt, so FA's `*_Path` strips are not used as paths.
+
+Scatter rules choose one family of art (all of `Tree_Green_*`, say) and vary the copies inside it, so a wood doesn't mix summer and autumn trees. Flowers may mix colours.
+
+If the only match is through a similar word (a `stall` that came back as a booth), the render says so, so you can check it, name a file with `file:`, or add a tag.
+
 ## Packs that work well
 
 | Pack | Notes |
@@ -56,7 +68,7 @@ kinds:
 
 ## Several packs
 
-Index several folders into one file, or pass several `-i` indexes. When two packs have equally good matches, the pack listed first wins, so put your main pack first and the starter pack last as a fallback.
+Index several folders into one file, or pass several `-i` indexes. The first pack listed that has the thing itself supplies it, so put your main pack first and the starter pack last as a fallback. For example, with Forgotten Adventures Core first, trees and crates come from FA, and market stalls (which Core lacks) come from the starter pack.
 
 ## Licences
 

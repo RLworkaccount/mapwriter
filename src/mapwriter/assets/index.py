@@ -19,7 +19,19 @@ PACK_MANIFEST = "mapwriter-pack.yaml"
 DEFAULT_PPSQ = 200
 SIZE_WORDS = {"big": 1, "large": 1, "long": 1, "huge": 1, "great": 1, "small": -1, "little": -1, "tiny": -1}
 PART_WORDS = {"adornment", "part", "broken", "piece", "overlay", "top", "base", "covered", "arranged", "arrangement", "misc",
-              "connector", "corner", "joint", "ending", "shadow"}          # Forgotten Adventures, 2-Minute Tabletop and most packs paint 200 px per 5 ft square
+              "connector", "corner", "joint", "ending", "shadow", "lid", "sticker", "spray"}
+# Words that put an item in a special setting or season. A plain 'tree' or 'bush' should
+# not come back as a Christmas tree or a Feywild bush unless the scene asks for that.
+THEME_WORDS = {"christmas", "christma", "holiday", "halloween", "feywild", "multicolor", "volcanic", "underdark", "astral",
+               "horror", "ceremorph", "drow", "industrial", "fallen", "bare", "dead", "burnt", "ruined", "snow",
+               "snowy", "frozen", "icy", "winter", "autumn", "grave", "burial", "ore"}
+COLOUR_WORDS = {"red", "blue", "green", "yellow", "orange", "purple", "pink", "white", "black", "grey", "gray",
+                "brown", "gold", "silver", "violet", "teal", "cyan", "magenta", "multicolor"}
+MIXED_COLOUR_HEADS = {"flower"}        # a flower bed may mix colours; trees and bushes keep one
+# Plants come green unless the scene names a colour: red and orange trees are autumn ones.
+FLORA_HEADS = {"tree", "bush", "plant", "shrub", "hedge", "fern", "grass", "leaf", "vine", "ivy"}
+# Words a scene uses for a strip of ground. 'dirt path' wants dirt, not a file named *_Path.
+ROUTE_WORDS = {"path", "road", "track", "trail", "lane", "footpath", "way"}          # Forgotten Adventures, 2-Minute Tabletop and most packs paint 200 px per 5 ft square
 
 
 @dataclass
@@ -129,6 +141,12 @@ def describe(rel: str, pack: str, root: str, ppsq: int = DEFAULT_PPSQ, overrides
                  ppsq=ppsq, extra_tags=extra)
 
 
+def _drop_route_word(ws: list[str], kind: str | None) -> list[str]:
+    if kind == "floor" and len(ws) > 1 and ws[-1] in ROUTE_WORDS:
+        return ws[:-1]
+    return ws
+
+
 class Index:
     def __init__(self, assets: list[Asset] | None = None):
         self.assets = assets or []
@@ -145,8 +163,12 @@ class Index:
         for a in self.assets:
             self._by_kind.setdefault(a.kind, []).append(a)
             aw = a.all_words
-            nw = set(naming.words(os.path.basename(a.rel))) | set(a.extra_tags)
-            self._words[id(a)] = (aw, nw)
+            name_list = naming.words(os.path.basename(a.rel))
+            nw = set(name_list) | set(a.extra_tags)
+            themes = {w.rstrip("0123456789") for w in aw} & THEME_WORDS
+            if "arranged" in a.rel.lower():          # indexes made before 0.2 dropped the word
+                aw = aw | {"arranged"}
+            self._words[id(a)] = (aw, nw, name_list[0] if name_list else "", themes)
             by_kind = self._postings.setdefault(a.kind, {})
             for w in aw:
                 by_kind.setdefault(w, []).append(a)
@@ -212,6 +234,7 @@ class Index:
         """
         ws = [w for w in naming.words(want) if w not in SIZE_WORDS]
         size_word = next((SIZE_WORDS[w] for w in naming.words(want) if w in SIZE_WORDS), 0)
+        ws = _drop_route_word(ws, kind)
         if not ws:
             return []
         head = ws[-1]
@@ -220,13 +243,23 @@ class Index:
         asked = set(ws)
         scored = []
         for a in self._candidates(kind, head_opts):
-            aw, name_words = self._words[id(a)]
+            aw, name_words, first, themes = self._words[id(a)]
             s = 10.0 if head in aw else 7.0
             if head_opts & name_words:
                 s += 3
+            if first == head:               # named for the thing itself: Dirt_A_01, not Stone_Floor_Dirt
+                s += 3
+            elif first in head_opts:        # ...or for a near word: Box_* when asked for a crate
+                s += 1
+            if themes and not themes & asked:     # a Christmas tree sits in Holidays: asking for one is enough
+                s -= 3
+            if head in FLORA_HEADS and ((name_words & COLOUR_WORDS) - {"green"} - asked):
+                s -= 2
             for w, opts in mods:
                 if w in aw:
                     s += 2.5 if w in name_words else 1.5
+                    if w in name_words and w in THEME_WORDS | COLOUR_WORDS:
+                        s += 1.5        # asked for 'christmas tree' or 'red tree': that beats a plain one
                 elif opts & aw:
                     s += 1.0
             if size and a.footprint:
@@ -258,16 +291,43 @@ class Index:
         scored.sort(key=lambda t: (-t[0], t[1].id))
         return scored[:limit]
 
-    def pick(self, want: str, kind: str | None = "prop", size=None, seed: int = 0):
-        """Choose one asset: a seeded pick among the near-best matches."""
-        res = self.search(want, kind, size, limit=12)
+    def loose(self, want: str, asset: "Asset", kind: str | None = "prop") -> bool:
+        """True when ``asset`` matched ``want`` only through a synonym of its main noun,
+        so the scene may get something rather different from what it asked for."""
+        ws = _drop_route_word([w for w in naming.words(want) if w not in SIZE_WORDS], kind)
+        return bool(ws) and ws[-1] not in asset.all_words
+
+    def pick(self, want: str, kind: str | None = "prop", size=None, seed: int = 0, family_seed: int | None = None):
+        """Choose one asset: a seeded pick among the near-best matches.
+
+        With ``family_seed`` (used when each copy gets its own ``seed``), one family of art is
+        chosen first, such as all of ``Tree_Green_*``, and the copies vary inside it. Then a
+        wood is all green trees rather than a mix of summer and autumn ones. Flowers may mix colours.
+        """
+        res = self.search(want, kind, size, limit=None)
         if not res:
             return None
-        best = res[0][0]
-        top = [a for s, a in res if s >= best - 0.75]
-        # When packs tie, the pack listed first wins (the user's main pack goes first).
+        # The first pack listed that has the thing itself (not only something with a similar
+        # name) supplies it, so a small fill-in pack listed later never wins on wording alone.
         rank = {p: i for i, p in enumerate(self.pack_order)}
+        for pack in sorted({a.pack for _s, a in res}, key=lambda p: rank.get(p, 99)):
+            mine = [(s, a) for s, a in res if a.pack == pack]
+            if not self.loose(want, mine[0][1], kind):
+                res = mine
+                break
+        best = res[0][0]
+        top = [a for s, a in res if s >= best - 0.75]      # all near-best, so scatter varies across the whole set
+        # When packs tie, the pack listed first wins (the user's main pack goes first).
         first = min(rank.get(a.pack, 99) for a in top)
         top = [a for a in top if rank.get(a.pack, 99) == first]
+        if family_seed is not None and len(top) > 1:
+            ws = [w for w in naming.words(want) if w not in SIZE_WORDS]
+            mixed = bool(ws) and ws[-1] in MIXED_COLOUR_HEADS
+            def family(a):
+                return (a.pack,) + tuple(w for w in naming.words(os.path.splitext(a.name)[0])
+                                         if not (mixed and w.rstrip("0123456789") in COLOUR_WORDS))
+            fams = sorted({family(a) for a in top})
+            fam = random.Random(f"{family_seed}:{want}:{kind}:{size}:family").choice(fams)
+            top = [a for a in top if family(a) == fam]
         rnd = random.Random(f"{seed}:{want}:{kind}:{size}")
         return rnd.choice(top)

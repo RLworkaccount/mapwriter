@@ -371,3 +371,76 @@ def test_pack_check_and_credits(tmp_path, starter):
                    "props": [{"want": "cart", "at": [1, 1]}]})
     mixed = Index(starter.assets + idx.assets)
     assert credits(build(scene, mixed)) == ["2-Minute Tabletop, CC BY-NC 4.0"]
+
+
+# ------------------------------------------------------------------ outdoor picks in big packs
+FA_OUTDOOR = [
+    "Woodlands/!Wilderness/Textures/Dirt/Dirt_A_01.jpg",
+    "!Core_Settlements/Textures/Stone_Floors/Flat_Stone_Floor_A_Dirt.jpg",
+    "!Core_Settlements/Structures/Building/Wooden_Walkway_Tiles/Paths/Walkway_Small_Wood_Ashen_A1_Path.webp",
+    "!Core_Settlements/Decor/Holidays/Christmas/Christmas_Trees/Christmas_Tree_01_A1_3x3.webp",
+    "Woodlands/!Wilderness/Flora/Trees/Tree_Green_A1_6x6.webp",
+    "Woodlands/!Wilderness/Flora/Trees/Tree_Green_B1_5x5.webp",
+    "Woodlands/!Wilderness/Flora/Trees/Tree_Red_A1_6x6.webp",
+    "Woodlands/!Wilderness/Flora/Trees/Tree_Red_B1_5x5.webp",
+    "Feywilds/!Wilderness/Flora/Bushes/Bush_Multicolor2_A1_1x1.webp",
+    "Woodlands/!Wilderness/Flora/Bushes/Bush_Green_A1_1x1.webp",
+    "Volcanic/!Wilderness/Decor/Rocks/Rock_Stone_Volcanic_B10_1x1.webp",
+    "Mountain/!Wilderness/Decor/Rocks/Rock_Stone_Earthy_A10_1x1.webp",
+    "!Core_Settlements/Decor/Storage/Boxes_and_Crates/Crates/Crate_Lid_Wood_Ashen_A_2x1.webp",
+    "!Core_Settlements/Decor/Storage/Boxes_and_Crates/Crates/Crate_Wood_Ashen_A_1x1.webp",
+    "!Core_Settlements/Decor/Storage/Boxes_and_Crates/Luggage/Box_Luggage_Base_Leather_Blue_A10_1x1.webp",
+    "!Core_Settlements/Combat/Armor/Armor_Stands/Armor_Stand_Wood_Ashen_A1_1x1.webp",
+    "Woodlands/!Wilderness/Flora/Flowers/Flowers_Rose_Red_A1_1x1.webp",
+    "Woodlands/!Wilderness/Flora/Flowers/Flowers_Rose_Blue_A1_1x1.webp",
+    "!Core_Settlements/Clutter/!Arranged_Clutter/Flowers/Arranged_Flowers_A1_1x1.webp",
+]
+
+
+def test_outdoor_words_find_plain_outdoor_art():
+    idx = Index([describe(n, "FA", "/fa") for n in FA_OUTDOOR])
+    assert idx.pick("dirt path", "floor").name == "Dirt_A_01.jpg"        # not a wooden *_Path strip or a dirty floor
+    assert idx.pick("dirt road", "floor").name == "Dirt_A_01.jpg"
+    assert "Tree_Green" in idx.pick("oak tree").name                      # not a Christmas tree or autumn red
+    assert "Christmas" in idx.pick("christmas tree").name
+    assert "Tree_Red" in idx.pick("red tree").name
+    assert "Bush_Green" in idx.pick("bush").name
+    assert "Earthy" in idx.pick("rock").name
+    assert idx.pick("crate").name == "Crate_Wood_Ashen_A_1x1.webp"        # not a lid or a suitcase
+    assert idx.pick("market stall") is None                               # an armour stand is not a stall
+    assert "Arranged" not in idx.pick("flowers").name
+
+
+def test_first_pack_with_the_real_thing_wins(tmp_path):
+    fa = [describe(n, "FA", "/fa") for n in FA_OUTDOOR]
+    fill = [describe(n, "Starter", "/s") for n in ("Oak_Tree_3x3.png", "Market_Stall_Red_3x2.png", "Booth_2x2.png")]
+    idx = Index(fa + fill)
+    assert idx.pick("oak tree").pack == "FA"              # 'oak' is only in the fill-in pack's name, but FA has trees
+    assert idx.pick("market stall").pack == "Starter"     # FA has none, so the fill-in pack supplies it
+    booth = Index(fill[2:]).pick("stall")
+    assert booth.name == "Booth_2x2.png" and Index(fill[2:]).loose("stall", booth)
+    assert not idx.loose("market stall", idx.pick("market stall"))
+
+
+def test_scatter_keeps_one_family_and_mixes_flower_colours():
+    idx = Index([describe(n, "FA", "/fa") for n in FA_OUTDOOR])
+    trees = {idx.pick("tree", seed=s, family_seed=3).name.split("_")[1] for s in range(12)}
+    assert trees == {"Green"}
+    roses = {idx.pick("flowers", seed=s, family_seed=3).name for s in range(30)}
+    assert any("Red" in r for r in roses) and any("Blue" in r for r in roses)
+
+
+def test_scatter_keeps_canopies_off_buildings_and_furniture(starter):
+    data = json.loads(json.dumps(OUTDOOR))
+    data["rooms"] = [{"name": "Hut", "box": [8, 4, 14, 10], "doors": [{"wall": "south", "at": 10}]}]
+    data["props"] = [{"want": "big table", "at": [2, 2], "size": [3, 2]}]
+    data["scatter"] = [{"want": "oak tree", "count": 8, "size": [3, 3], "gap": -0.5}]
+    plan = build(parse(data), starter)
+    hut = parse(data).rooms[0]
+    for p in plan.props:
+        if p.want != "oak tree":
+            continue
+        x0, y0, x1, y1 = p.box
+        assert x1 <= 8 or x0 >= 14 or y1 <= 4 or y0 >= 10 or not any(
+            hut.contains(x, y) for x in (x0 + 0.3, x1 - 0.3) for y in (y0 + 0.3, y1 - 0.3))
+        assert not (x0 < 4.5 and y0 < 3.5 and x1 > 2.5 and y1 > 2.5)     # the table stays in view

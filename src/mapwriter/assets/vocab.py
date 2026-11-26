@@ -29,7 +29,7 @@ GROUPS = [
     {"barrel", "cask", "keg"},
     {"sack", "bag"},
     {"cupboard", "wardrobe", "cabinet", "dresser"},
-    {"stall", "booth", "stand"},
+    {"stall", "booth"},
     {"altar", "shrine"},
     {"statue", "sculpture"},
     {"cage", "pen", "hutch"},
