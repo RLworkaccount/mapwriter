@@ -13,7 +13,24 @@ from dataclasses import dataclass, field
 from .assets.index import Asset, Index
 from .geometry import (Region, distance_to_segment, grown, path_strip, rough_outline, joint_shape, light_area, merge_walls, on_wall, reachable,
                        wall_junctions)
-from .scene import Scene, Prop, Light, Opening, Room, SceneError
+from .assets import naming
+from .scene import Scene, Prop, Light, Opening, Room, SceneError, WallLook
+
+
+# Walls made of these let sight and light through (they still stop movement).
+SEE_THROUGH = {"glass", "fence", "railing"}
+
+
+@dataclass
+class WallSet:
+    """Walls that share one look: the same art, thickness and see-through setting."""
+    style: str
+    asset: Asset | None
+    raw: list = field(default_factory=list)       # before openings are cut
+    segs: list = field(default_factory=list)      # after, as painted
+    joints: list = field(default_factory=list)
+    thickness: float | None = None                # squares; None is the painter's usual thickness
+    see_through: bool = False
 
 
 @dataclass
@@ -62,6 +79,8 @@ class Plan:
     light_areas: list = field(default_factory=list)        # one polygon per light: where its light reaches
     wall_joints: list = field(default_factory=list)        # (x, y, asset, clockwise quarter turns)
     wall_asset: Asset | None = None
+    wall_sets: list[WallSet] = field(default_factory=list)  # walls grouped by look, for painting
+    see_through_walls: list = field(default_factory=list)  # raw glass walls: they stop movement only
     openings: list[tuple[Opening, Asset | None]] = field(default_factory=list)
     props: list[Placed] = field(default_factory=list)
     lights: list[Light] = field(default_factory=list)
@@ -163,16 +182,38 @@ def build(scene: Scene, index: Index) -> Plan:
 
     # ---------- walls and openings ----------
     raw = []
+    looks = []
     for r in scene.rooms:
         if r.walls is None:
             continue
+        style = None if r.walls in ("default", True) else str(r.walls)
         for (ax, ay), (bx, by) in r.edges():
             raw.append((ax, ay, bx, by))
+            looks.append(WallLook(style, r.see_through, r.wall_thickness))
     raw += list(scene.walls)
+    looks += list(scene.wall_looks) + [WallLook()] * (len(scene.walls) - len(scene.wall_looks))
     plan.raw_walls = raw
     plan.wall_asset = index.get(scene.wall_style) or index.pick(scene.wall_style, "wall", seed=seed)
     if raw and plan.wall_asset is None:
         warn(f"No wall art matches '{scene.wall_style}'; walls are drawn as plain stone.")
+    sets: dict = {}
+    for seg, lk in zip(raw, looks):
+        style = lk.style or scene.wall_style
+        see = lk.see_through if lk.see_through is not None else bool(SEE_THROUGH & set(naming.words(style)))
+        key = (style.lower(), see, lk.thickness)
+        if key not in sets:
+            if style.lower() == scene.wall_style.lower():
+                asset = plan.wall_asset
+            else:
+                asset = index.get(style) or index.pick(style, "wall", seed=seed)
+                if asset is None:
+                    warn(f"No wall art matches '{style}'; those walls use the scene's wall style.")
+                    asset = plan.wall_asset
+            sets[key] = WallSet(style, asset, thickness=lk.thickness, see_through=see)
+        sets[key].raw.append(seg)
+    plan.wall_sets = list(sets.values())
+    plan.see_through_walls = [w for ws in plan.wall_sets if ws.see_through for w in ws.raw]
+    solid_raw = [w for ws in plan.wall_sets if not ws.see_through for w in ws.raw]
 
     openings = [o for r in scene.rooms for o in r.openings] + list(scene.openings)
     seen = set()
@@ -191,11 +232,15 @@ def build(scene: Scene, index: Index) -> Plan:
             want = o.want or scene.window_style
             asset = (index.get(o.file) if o.file else None) or index.pick(want, "window", seed=seed)
         plan.openings.append((o, asset))
-    plan.walls = merge_walls(raw, [o for o, _ in plan.openings if o.kind != "window"])
-    # Light passes through windows, arches and open doors, and is stopped by walls and closed doors.
-    plan.light_walls = merge_walls(raw, [o for o, _ in plan.openings
-                                         if o.kind in ("window", "arch") or o.open])
-    plan.wall_joints = _wall_joints(plan.walls, plan.wall_asset, index)
+    cut = [o for o, _ in plan.openings if o.kind != "window"]
+    plan.walls = merge_walls(raw, cut)
+    # Light passes through windows, arches, open doors and glass, and is stopped by walls and closed doors.
+    plan.light_walls = merge_walls(solid_raw, [o for o, _ in plan.openings
+                                               if o.kind in ("window", "arch") or o.open])
+    for ws in plan.wall_sets:
+        ws.segs = merge_walls(ws.raw, cut)
+        ws.joints = _wall_joints(ws.segs, ws.asset, index)
+    plan.wall_joints = [j for ws in plan.wall_sets for j in ws.joints]
 
     # ---------- props ----------
     occupied: set[tuple[int, int]] = set()
@@ -373,7 +418,11 @@ def _scatter(plan: Plan, rule, si: int, index: Index, blocked_squares, taken, wa
         avoid += [f.region for f in plan.floors[1:] if f.region is not region and not f.is_room
                   and (on_map or f.water or f.poly is None)]
         if not inside_room:
-            solid += [Region(poly=r.poly) for r in sc.rooms if r.walls is not None]
+            # A bed or patch inside a walled room (a glasshouse border) scatters freely in it.
+            bx0, by0, bx1, by1 = region.bbox()
+            corners = [(bx0 + 0.01, by0 + 0.01), (bx1 - 0.01, by0 + 0.01), (bx0 + 0.01, by1 - 0.01), (bx1 - 0.01, by1 - 0.01)]
+            solid += [Region(poly=r.poly) for r in sc.rooms
+                      if r.walls is not None and not all(r.contains(x, y) for x, y in corners)]
     for a in rule.avoid or []:
         if str(a).lower() != "none":
             g = _region_named(plan, str(a))

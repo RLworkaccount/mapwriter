@@ -619,3 +619,49 @@ def test_sketch_light_rings_optional(starter):
 
 def test_plural_folding():
     assert naming.singular("bushes") == "bush" and naming.singular("benches") == "bench" and naming.singular("boxes") == "box"
+
+
+# ------------------------------------------------------------------ wall looks: glass, hedges, fences
+def test_wall_looks_glass_hedges_and_fences(starter):
+    from mapwriter.export.uvtt import uvtt_data
+    from mapwriter.render.painter import Painter
+    data = {"name": "Looks", "grid": {"width": 14, "height": 10, "px_per_square": 20}, "ground": "grass",
+            "rooms": [{"name": "Glasshouse", "box": [1, 1, 6, 6], "see_through": True,
+                       "doors": [{"wall": "south", "at": 3}]},
+                      {"name": "Pen", "box": [8, 1, 12, 5], "walls": "wood fence"}],
+            "walls": [{"points": [[1, 8], [6, 8], [6, 9]], "style": "hedge", "thickness": 1}],
+            "lights": [{"at": [3.5, 3.5], "radius": 6}]}
+    sc = parse(data)
+    assert len(sc.walls) == 2 and sc.wall_looks[0].thickness == 1.0     # a polyline becomes two walls
+    plan = build(sc, starter)
+    glass = set(plan.see_through_walls)
+    assert len(glass) == 8                                              # the glasshouse, plus the fence (by its words)
+    assert any(ws.thickness == 1.0 and not ws.see_through for ws in plan.wall_sets)
+    # Light passes the glass: the light reaches well past the glasshouse walls.
+    xs = [x for x, _ in plan.light_areas[0]]
+    assert max(xs) > 7 and min(xs) < 0.5
+    d = uvtt_data(plan, None)
+    windows = [p for p in d["portals"] if not p["closed"]]
+    assert len(windows) >= 8                                            # glass and fence sides, door gap cut out
+    los_points = [pt for line in d["line_of_sight"] for pt in line]
+    assert not any(pt["x"] == 1 and 1 < pt["y"] < 6 for pt in los_points)  # glass is not a sight-blocking wall
+    Painter(plan).walls()                                                # paints each set at its own thickness
+
+
+def test_scatter_inside_an_area_within_a_walled_room(starter):
+    data = {"name": "Beds", "grid": {"width": 12, "height": 10, "px_per_square": 20}, "ground": "grass",
+            "rooms": [{"name": "Glasshouse", "box": [1, 1, 11, 9], "doors": [{"wall": "south", "at": 5}]}],
+            "areas": [{"name": "bed", "box": [2, 2, 6, 5], "floor": "dirt"}],
+            "scatter": [{"want": "bush", "in": "bed", "count": 4}]}
+    plan = build(parse(data), starter)
+    assert sum(p.want == "bush" for p in plan.props) == 4, plan.warnings
+
+
+def test_wall_look_errors():
+    base = {"name": "x", "grid": {"width": 6, "height": 6}}
+    with pytest.raises(SceneError):
+        parse({**base, "walls": [{"points": [[0, 0], [2, 2]]}]})
+    with pytest.raises(SceneError):
+        parse({**base, "walls": [{"from": [0, 0], "to": [2, 0], "thickness": "thick"}]})
+    with pytest.raises(SceneError):
+        parse({**base, "rooms": [{"name": "r", "box": [0, 0, 3, 3], "see_through": "yes"}]})
