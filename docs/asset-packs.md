@@ -23,6 +23,27 @@ Scatter rules choose one family of art (all of `Tree_Green_*`, say) and vary the
 
 If the only match is through a similar word (a `stall` that came back as a booth), the render says so, so you can check it, name a file with `file:`, or add a tag.
 
+## Picking by the pictures
+
+Names only go so far. Two packs can both have 'apple' in a file name, one an apple and the other a handcart full of them. Run this once after indexing:
+
+```bash
+mapwriter look -i mapwriter-index.json --suggest tags-suggested.yaml
+```
+
+(or `mapwriter index ... --look` to do both in one go). It opens every image on your own computer, shrinks it to a thumbnail and measures plain things: how much of its squares it fills and how solid it is, which colours cover it, how much black ink outlines it, how bright and how strongly coloured it is, and whether it tiles seamlessly. No AI model or online service is involved and nothing is sent anywhere: it is arithmetic on pixels. The numbers are stored in the index, so later runs only look at new or changed files. A big pack such as FA Core takes a few minutes the first time.
+
+With pictures measured, picking also goes by what the art looks like:
+
+- **Looks unlike the thing**: among files matching `apple`, MapWriter works out the middle look of the files named for apples (`Apple_Red_1x1`, `Apple_Green_1x1`...). A file that only has the word elsewhere in its name and looks nothing like them, such as `Handcart_Apples_3x2`, loses points, and no longer wins just because its pack is listed first. Ask for `handcart` and you still get it.
+- **Colours from the picture**: `green apple` or `red cloak` finds green or red art even when the file name gives no colour, and a plain `tree` avoids art that is mostly orange or red (autumn) unless the scene names a colour.
+- **Vague names**: a file such as `IMG_0042.png` takes the word of the named files it looks most like (`rock`, say) when one group is clearly nearest. Guessed words count for less than real ones, and the render tells you when one was used. `--suggest` writes the guesses to a file to check: fix any that are wrong and use it as your `tags.yaml`.
+- **Seamless pictures** filed among props (a `Grass_01.png` outside a textures folder, at least two squares across) are used as floor textures.
+
+`mapwriter search "apple"` shows the colours seen in each picture, and `mapwriter search Barrel_Oak_1x1 --like` lists the art that looks most like a file.
+
+Indexes made before v0.4 still work; they simply pick by words until `mapwriter look` has run.
+
 ## Packs that work well
 
 | Pack | Notes |
@@ -39,7 +60,7 @@ Before indexing a pack you haven't used yet, let MapWriter look it over:
 mapwriter pack-check "Packs/2MT Garden" --write --credit "Art by 2-Minute Tabletop, CC BY-NC 4.0"
 ```
 
-It prints how many images of each kind it found, its guess at the pack's pixels per square (from files that name their size, such as `Cart_3x2.png`, or else the commonest small-prop size), and files whose names say too little to be found by words. With `--write` it saves a starter `mapwriter-pack.yaml` in the pack folder, unless one is there already. Check the guess against a 1-square item such as a barrel, then index the pack.
+It prints how many images of each kind it found, its guess at the pack's pixels per square (from files that name their size, such as `Cart_3x2.png`, or else the commonest small-prop size), and files whose names say too little to be found by words. It also measures the pictures (skip that with `--no-look`): it reports the pack's style on average (black ink, colour strength, brightness, soft shadow), seamless pictures it will use as floors, and a guessed word for vaguely named files, which `--write` puts in the yaml as commented lines to check. With `--write` it saves a starter `mapwriter-pack.yaml` in the pack folder, unless one is there already. Check the guess against a 1-square item such as a barrel, then index the pack.
 
 ## mapwriter-pack.yaml
 

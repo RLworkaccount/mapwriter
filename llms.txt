@@ -9,6 +9,7 @@ Install: `pip install git+https://github.com/RLworkaccount/mapwriter`
 Typical commands:
 - `mapwriter starter-pack starter` draws the free starter art
 - `mapwriter index <asset folders...> -o mapwriter-index.json` indexes art by file and folder names
+- `mapwriter look -i mapwriter-index.json` measures each picture locally (shape, colours, ink, seamless tiles) so picking goes by the art as well as its name
 - `mapwriter search "round table"` shows which art a word picks
 - `mapwriter check scene.yaml -v` lists warnings and the file chosen for every prop
 - `mapwriter sketch scene.yaml -o out` draws a block plan with grid numbers
