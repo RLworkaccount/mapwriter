@@ -95,6 +95,15 @@ class Canvas:
             self._cache[key] = Image.open(asset.path).convert("RGBA")
         return self._cache[key]
 
+    def graded(self, asset: Asset, grade) -> Image.Image:
+        """The asset's image with colour strength and brightness moved towards the map's
+        main style (see assets/style.py)."""
+        key = ("graded", asset.id, tuple(grade))
+        if key not in self._cache:
+            from ..assets.style import apply_grade
+            self._cache[key] = apply_grade(self.raw(asset), grade)
+        return self._cache[key]
+
     def tile(self, tex: Image.Image, box_px) -> Image.Image:
         x0, y0, x1, y1 = box_px
         tw, th = tex.size

@@ -30,6 +30,7 @@ src/mapwriter/
   render/sketch.py   block plan PNG
   export/uvtt.py     .dd2vtt (Universal Battlemap Importer)
   export/keymap.py   GM key and wall/door/light check images
+  browse.py          `mapwriter browse`: local asset browser page (thumbnails, look-alikes, corrections -> tags.yaml)
   build.py           high-level steps used by the CLI
   cli.py             `mapwriter` command
   templates.py       tavern, shop, house, market, clearing layouts (`mapwriter new`)

@@ -88,9 +88,36 @@ kinds:
   Grates/: overlay
 ```
 
+## The asset browser
+
+```bash
+mapwriter browse -o asset-browser
+```
+
+writes `asset-browser/index.html` and small thumbnails of your art. Open the page in any browser. It works offline and stays on your computer: nothing is uploaded, and the page reads your files only from your own disk. Don't put the folder anywhere public, since the thumbnails are copies of your packs' art.
+
+- Search by words, and filter by kind, pack, colour, or files with guessed words only.
+- Click a picture to see its words, footprint, colours, outline ink and brightness, its pack's style, and the art that looks most like it.
+- Correct a picture: add words or change its kind, then **Download tags.yaml**. Use the file with `-t tags.yaml` (or copy its lines into yours). Corrections are remembered in that browser until you clear them.
+
+Thumbnails are made once and only remade when a file changes. For a very large library, `--pack NAME` limits the page to one pack, and `--no-thumbs` shows the original files instead (no copies made, but the page is slower).
+
+## Mixing packs
+
+Packs by different artists look different: one outlines everything in heavy black ink, another has soft colour and baked-in shadows. Once pictures are measured (`mapwriter look`), MapWriter keeps a style profile for each pack (black ink, colour strength, brightness, soft shadow) and `mapwriter look` prints them.
+
+- **The map's main style** is the first pack listed in the index, or the pack named by `style: { pack: ... }` in the scene.
+- **Missing art comes from the nearest style.** The main pack still supplies everything it has. When it has nothing for a word, the pack whose style is closest to the main one's goes next, rather than simply the next pack listed.
+- **A warning when styles clash.** If a map ends up with art in clearly different styles, `check` and `render` say which packs and how they differ.
+- **`style: { match: true }`** gently grades art from other packs towards the main style when painting: colour strength and brightness are moved part of the way (never more than about a third), and transparency is untouched. Outlines and shading drawn into the art stay as they are, so the nearest-style choice above matters most.
+
+```yaml
+style: { walls: stone wall, pack: Forgotten Adventures, match: true }
+```
+
 ## Several packs
 
-Index several folders into one file, or pass several `-i` indexes. The first pack listed that has the thing itself supplies it, so put your main pack first and the starter pack last as a fallback. For example, with Forgotten Adventures Core first, trees and crates come from FA, and market stalls (which Core lacks) come from the starter pack.
+Index several folders into one file, or pass several `-i` indexes. The first pack listed that has the thing itself supplies it, so put your main pack first and the starter pack last as a fallback. For example, with Forgotten Adventures Core first, trees and crates come from FA, and market stalls (which Core lacks) come from the starter pack. With pictures measured, packs after the first are tried in order of how close their style is to the first pack's (see Mixing packs).
 
 ## Licences
 

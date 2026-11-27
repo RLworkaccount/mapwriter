@@ -50,11 +50,11 @@ The long view: point MapWriter at any folder of battlemap art, however it is nam
 
 v0.4 cuts that to three pull requests:
 
-1. **Picture facts and picking by them** (this PR): `mapwriter look` measures every picture (fill, solidity, colours, black ink, brightness, colour strength, soft shadow, seamless tiling, a fingerprint). Picking drops art that looks unlike the files named for the thing (no handcart for `apple`), reads colours from the picture, gives vague file names a guessed word from their look-alikes, and treats seamless pictures as floors. `pack-check` reports all of this for a new pack.
-2. **Style matching**: a style profile for each pack (ink, colour strength, brightness, shadow, resolution). When several packs could supply a piece, the one closest to the map's main style wins, and an optional `match_style: true` gently grades mixed-in art (colour strength, brightness, shadow) towards the main pack at paint time.
-3. **Asset browser page**: `mapwriter browse` writes a local HTML page of thumbnails (kept on your computer, never uploaded) to search by words, kind, pack and colour, see look-alikes and what a word would pick, and mark corrections that save as a `tags.yaml`.
+1. **Picture facts and picking by them** (done, PR #12): `mapwriter look` measures every picture (fill, solidity, colours, black ink, brightness, colour strength, soft shadow, seamless tiling, a fingerprint). Picking drops art that looks unlike the files named for the thing (no handcart for `apple`), reads colours from the picture, gives vague file names a guessed word from their look-alikes, and treats seamless pictures as floors. `pack-check` reports all of this for a new pack.
+2. **Style matching** (done): a style profile for each pack (ink, colour strength, brightness, shadow, resolution). When several packs could supply a piece, the one closest to the map's main style wins, and an optional `match_style: true` gently grades mixed-in art (colour strength, brightness, shadow) towards the main pack at paint time.
+3. **Asset browser page** (done): `mapwriter browse` writes a local HTML page of thumbnails (kept on your computer, never uploaded) to search by words, kind, pack and colour, see each pack's style and the art that looks most alike, check guessed words, and mark corrections that download as a `tags.yaml`.
 
-Later: real visible size from the drawn part (a 1x1 file with a tiny cup in it), near-copy grouping so scatter varies more, learning from your corrections, and the optional offline model.
+Later: showing in the browser what a scene's words would pick, real visible size from the drawn part (a 1x1 file with a tiny cup in it), near-copy grouping so scatter varies more, learning from your corrections, and the optional offline model.
 
 ## Known gaps in v0.1
 

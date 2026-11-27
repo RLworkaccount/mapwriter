@@ -11,6 +11,7 @@ Typical commands:
 - `mapwriter index <asset folders...> -o mapwriter-index.json` indexes art by file and folder names
 - `mapwriter look -i mapwriter-index.json` measures each picture locally (shape, colours, ink, seamless tiles) so picking goes by the art as well as its name
 - `mapwriter search "round table"` shows which art a word picks
+- `mapwriter browse -o asset-browser` writes a local page to look through the packs and download tag corrections
 - `mapwriter check scene.yaml -v` lists warnings and the file chosen for every prop
 - `mapwriter sketch scene.yaml -o out` draws a block plan with grid numbers
 - `mapwriter render scene.yaml -o out` paints the maps and writes the `.dd2vtt` files

@@ -216,6 +216,8 @@ class Index:
     def __init__(self, assets: list[Asset] | None = None):
         self.assets = assets or []
         self.pack_order = list(dict.fromkeys(a.pack for a in self.assets))
+        self.main_pack: str | None = None      # the map's main style; None means the first pack listed
+        self.styles: dict[str, dict | None] = {}
         self._by_kind: dict[str, list[Asset]] = {}
         self._reindex()
 
@@ -223,6 +225,12 @@ class Index:
         """Group assets by kind and build word lookups, so a search only scores assets
         that share its main noun (big packs have well over 100,000 images)."""
         self._by_kind = {}
+        from .style import profile
+        self.pack_order = list(dict.fromkeys(a.pack for a in self.assets))
+        by_pack: dict[str, list[Asset]] = {}
+        for a in self.assets:
+            by_pack.setdefault(a.pack, []).append(a)
+        self.styles = {p: profile(v) for p, v in by_pack.items()}
         self._words: dict[int, tuple[set[str], set[str]]] = {}
         self._postings: dict[str | None, dict[str, list[Asset]]] = {None: {}}
         for a in self.assets:
@@ -347,6 +355,33 @@ class Index:
                if a is not asset and a.look and a.look.get("sig")]
         res.sort(key=lambda t: (t[0], t[1].id))
         return res[:limit]
+
+    # ---------- styles ----------
+    @property
+    def main(self) -> str | None:
+        """The pack whose style the map keeps to: the scene's choice, else the first pack listed."""
+        if self.main_pack and self.main_pack in self.styles:
+            return self.main_pack
+        return self.pack_order[0] if self.pack_order else None
+
+    def pack_rank(self) -> dict[str, float]:
+        """Order in which packs supply art: the main pack first, then packs by how close
+        their style is to the main pack's (when pictures are measured), then list order."""
+        from .style import gap
+        main = self.main
+        listed = {p: i for i, p in enumerate(self.pack_order)}
+        target = self.styles.get(main) if main else None
+
+        def key(p):
+            if p == main:
+                return (0, 0.0, listed[p])
+            g = gap(self.styles.get(p), target)
+            return (1, g if g is not None else 1e6, listed[p])
+        return {p: i for i, p in enumerate(sorted(self.pack_order, key=key))}
+
+    def style_gap(self, pack: str) -> float | None:
+        from .style import gap
+        return gap(self.styles.get(pack), self.styles.get(self.main)) if self.main else None
 
     # ---------- search ----------
     def kinds(self) -> dict[str, int]:
@@ -550,7 +585,9 @@ class Index:
                 res = ones
         # The first pack listed that has the thing itself (not only something with a similar
         # name) supplies it, so a small fill-in pack listed later never wins on wording alone.
-        rank = {p: i for i, p in enumerate(self.pack_order)}
+        # When the main pack has nothing, the pack whose style is nearest the main one's goes next.
+        order = self.pack_rank()
+        rank = {p: order.get(p, 99) for p in {a.pack for _s, a in res}}
         for pack in sorted({a.pack for _s, a in res}, key=lambda p: rank.get(p, 99)):
             mine = [(s, a) for s, a in res if a.pack == pack]
             if not self.loose(want, mine[0][1], kind) and id(mine[0][1]) not in unlike:
