@@ -94,8 +94,12 @@ def _image_size(full) -> list[int] | None:
 
 
 def scan(root: str | os.PathLike, pack: str | None = None, read_sizes: bool = True,
-         workers: int = 16) -> list[Asset]:
+         workers: int = 16, split: bool = False) -> list[Asset]:
     """Walk one pack folder and describe every image in it.
+
+    A sub-folder with its own mapwriter-pack.yaml is a pack of its own, and with
+    ``split`` every top-level sub-folder is (for a folder that holds several packs side
+    by side, such as one artist's pack next to another's).
 
     Reading each image's size means opening its header, which is slow on a cold
     disk (about 10 ms a file). Big packs have well over 100,000 images, so the
@@ -107,14 +111,25 @@ def scan(root: str | os.PathLike, pack: str | None = None, read_sizes: bool = Tr
     ppsq = int(man.get("px_per_square", DEFAULT_PPSQ))
     overrides = man.get("tags", {}) or {}
     kinds = man.get("kinds", {}) or {}
+    skips = [s.lower() for s in (man.get("skip") or [])]
     found: list[tuple[str, Path]] = []
-    for dirpath, _dirs, files in os.walk(root):
+    subpacks: list[Path] = []
+    for dirpath, dirs, files in os.walk(root):
+        here = Path(dirpath)
+        dirs.sort()
+        if here != root and (PACK_MANIFEST in files or (split and here.parent == root)):
+            subpacks.append(here)
+            dirs[:] = []
+            continue
         for fn in sorted(files):
             ext = os.path.splitext(fn)[1].lower()
             if ext not in naming.IMAGE_EXTS:
                 continue
             full = Path(dirpath) / fn
-            found.append((full.relative_to(root).as_posix(), full))
+            rel = full.relative_to(root).as_posix()
+            if any(s in rel.lower() for s in skips):
+                continue
+            found.append((rel, full))
     found = _best_resolution(found)
     sizes: list[list[int] | None] = [None] * len(found)
     if read_sizes and found:
@@ -125,6 +140,8 @@ def scan(root: str | os.PathLike, pack: str | None = None, read_sizes: bool = Tr
     out = [describe(rel, pack, str(root), ppsq, overrides, kinds, px=px) for (rel, _full), px in zip(found, sizes)]
     for a in out:
         a.credit = credit
+    for sub in subpacks:
+        out += scan(sub, read_sizes=read_sizes, workers=workers)
     return out
 
 
@@ -169,6 +186,7 @@ def describe(rel: str, pack: str, root: str, ppsq: int = DEFAULT_PPSQ, overrides
         fp = None
     elif kind == "floor" and fp is not None:
         kind = "prop"
+    kind = _not_art(rel, kind, fp, px, ppsq)
     if fp is None and px and kind in ("prop", "door", "window"):
         fp = [max(1, round(px[0] / ppsq)), max(1, round(px[1] / ppsq))]
     extra = []
@@ -194,6 +212,29 @@ def is_vague(a: Asset) -> bool:
     """True when the file name gives a search nothing to go on (IMG_0042.png, 17.webp) and
     no tags.yaml or pack manifest words were added."""
     return not a.extra_tags and not (set(naming.words(os.path.basename(a.rel))) - GENERIC_WORDS)
+
+
+# Seamless pieces that are still not ground: stair runs, wall and edge strips.
+NOT_FLOOR_WORDS = {"stair", "stairs", "step", "path", "wall", "edge", "border", "trim", "fence", "hedge", "cliff"}
+# Words that make a file a picture or model of something rather than the thing itself.
+DEPICTION_WORDS = {"sign", "signpost", "signboard", "trophy", "painting", "portrait", "poster", "banner", "tapestry",
+                   "statue", "statuette", "figurine", "toy", "plush", "doll", "icon", "symbol", "mural", "carving",
+                   "identifier", "label", "drawing", "sketch", "emblem", "taxidermy"}
+MAP_SQUARES = 20          # a picture at least this many squares each way with no size in its name is a whole map
+SHEET_WORDS = {"demo", "preview", "promo", "thumbnail", "showcase", "spritesheet", "contact"}
+TEXTURE_WORDS = {"texture", "textures", "tile", "tiles", "flooring"}
+
+
+def _not_art(rel: str, kind: str, fp, px, ppsq: int) -> str:
+    """Finished maps and demo sheets that sit in a pack folder are not pieces to build
+    with: file them as 'map' and 'sheet', which nothing searches."""
+    ws = set(naming.words(rel)) | set(re.split(r"[\\/_\-\s.]+", rel.lower()))
+    if ws & SHEET_WORDS:
+        return "sheet"
+    if (px and fp is None and kind in ("prop", "floor") and not ws & TEXTURE_WORDS
+            and min(px) >= MAP_SQUARES * ppsq):
+        return "map"
+    return kind
 
 
 def _named_for(filename: str, name_list: list[str]) -> set[str]:
@@ -257,15 +298,21 @@ class Index:
 
     # ---------- files ----------
     @classmethod
-    def build(cls, folders: list[str], read_sizes: bool = True) -> "Index":
+    def build(cls, folders: list[str], read_sizes: bool = True, split: bool = False) -> "Index":
         assets = []
         for f in folders:
-            assets += scan(f, read_sizes=read_sizes)
+            assets += scan(f, read_sizes=read_sizes, split=split)
         return cls(assets)
 
     def save(self, path: str | os.PathLike):
-        data = {"version": 1, "assets": [asdict(a) for a in self.assets]}
-        Path(path).write_text(json.dumps(data, indent=0), encoding="utf-8")
+        rows = []
+        for a in self.assets:
+            d = asdict(a)
+            if d["look"] and "mix" in d["look"]:
+                d["look"] = {k: v for k, v in d["look"].items() if k != "mix"}   # the signature holds it
+            rows.append(json.dumps(d, separators=(",", ":")))
+        # One asset per line: readable enough, and far smaller than indented JSON.
+        Path(path).write_text('{"version":1,"assets":[\n' + ",\n".join(rows) + "\n]}\n", encoding="utf-8")
 
     @classmethod
     def load(cls, *paths: str | os.PathLike) -> "Index":
@@ -306,7 +353,8 @@ class Index:
         for a in self.assets:
             lk = a.look
             if (a.kind == "prop" and lk and lk.get("tile") and lk.get("fill", 0) > 0.99 and a.px
-                    and naming.footprint(a.name) is None and min(a.px) >= 2 * a.ppsq):
+                    and naming.footprint(a.name) is None and min(a.px) >= 2 * a.ppsq
+                    and max(a.px) <= 2 * min(a.px) and not set(a.words) & NOT_FLOOR_WORDS):
                 a.kind, a.footprint = "floor", None
                 out.append(a)
         return out
@@ -469,6 +517,10 @@ class Index:
             junk = (aw & PART_WORDS) - asked
             if junk:
                 s -= 3
+            # A picture of the thing, not the thing: a fish trophy, a plant-name sign, a statue of a horse.
+            shown = (name_words & DEPICTION_WORDS) - asked - head_opts
+            if shown:
+                s -= 4
             if kind == "wall":
                 if "path" in aw:
                     s += 6
@@ -477,7 +529,7 @@ class Index:
             if kind == "floor" and aw & {"floor", "flooring"}:
                 s += 2
             s -= 0.01 * len(aw)
-            scored.append([s, a, False, head in first and not junk])
+            scored.append([s, a, False, head in first and not junk and not shown])
         self._judge_looks(scored)
         scored.sort(key=lambda t: (-t[0], t[1].id))
         return [(s, a, u) for s, a, u, _e in scored[:limit]]
@@ -508,6 +560,23 @@ class Index:
                 t[2] = True
             elif d < self.LOOK_NEAR and sure:
                 t[0] += 0.5
+
+    def smaller(self, want: str, asset: "Asset", kind: str | None = "prop", seed: int = 0) -> "Asset | None":
+        """The best match for ``want`` from the same pack that covers fewer squares than
+        ``asset``: a smaller tree when the big ones will not fit."""
+        if asset is None or not asset.footprint:
+            return None
+        area = asset.footprint[0] * asset.footprint[1]
+        res = [(s, a) for s, a, u in self._search(want, kind, None, None)
+               if not u and a.pack == asset.pack and a.footprint and a.footprint[0] * a.footprint[1] < area
+               and not self.loose(want, a, kind)]
+        if not res:
+            return None
+        best = res[0][0]
+        top = [a for s, a in res if s >= best - 0.75]
+        big = max(a.footprint[0] * a.footprint[1] for a in top)      # the next size down, not the smallest
+        top = [a for a in top if a.footprint[0] * a.footprint[1] == big]
+        return random.Random(f"{seed}:{want}:smaller:{area}").choice(top)
 
     def loose(self, want: str, asset: "Asset", kind: str | None = "prop") -> bool:
         """True when ``asset`` matched ``want`` only through a synonym of its main noun,

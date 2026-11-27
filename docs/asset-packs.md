@@ -19,7 +19,7 @@ A scene asks for things in plain words (`oak tree`, `dirt path`, `crate`). The l
 - plain versions over seasonal or special ones: a `tree` is not a Christmas tree, an autumn-red tree or a Feywild bush unless the scene says so (`christmas tree`, `red tree`), and plants come green unless a colour is named;
 - for a floor, the ground rather than the route: `dirt path` and `dirt road` look for dirt, so FA's `*_Path` strips are not used as paths.
 
-Scatter rules choose one family of art (all of `Tree_Green_*`, say) and vary the copies inside it, so a wood doesn't mix summer and autumn trees. Flowers may mix colours.
+Scatter rules choose one family of art (all of `Tree_Green_*`, say) and vary the copies inside it, so a wood doesn't mix summer and autumn trees. Flowers may mix colours. When a copy is too big to fit anywhere, the next size down from the same pack is tried (a smaller tree).
 
 If the only match is through a similar word (a `stall` that came back as a booth), the render says so, so you can check it, name a file with `file:`, or add a tag.
 
@@ -35,6 +35,7 @@ mapwriter look -i mapwriter-index.json --suggest tags-suggested.yaml
 
 With pictures measured, picking also goes by what the art looks like:
 
+- **Pictures of the thing**: files named as a sign, trophy, painting, statue, toy and the like (`Plant_Identifier_Sign`, `Trophy - Fish`) rank below the thing itself unless the scene asks for one (`fish trophy`).
 - **Looks unlike the thing**: among files matching `apple`, MapWriter works out the middle look of the files named for apples (`Apple_Red_1x1`, `Apple_Green_1x1`...). A file that only has the word elsewhere in its name and looks nothing like them, such as `Handcart_Apples_3x2`, loses points, and no longer wins just because its pack is listed first. Ask for `handcart` and you still get it.
 - **Colours from the picture**: `green apple` or `red cloak` finds green or red art even when the file name gives no colour, and a plain `tree` avoids art that is mostly orange or red (autumn) unless the scene names a colour.
 - **Vague names**: a file such as `IMG_0042.png` takes the word of the named files it looks most like (`rock`, say) when one group is clearly nearest. Guessed words count for less than real ones, and the render tells you when one was used. `--suggest` writes the guesses to a file to check: fix any that are wrong and use it as your `tags.yaml`.
@@ -75,7 +76,10 @@ tags:                       # extra words for files whose path contains the key
   Hutch: [cage, animal]
 kinds:                      # force a kind for matching paths
   Rug_Square: floor
+skip: [Previews, Old]       # leave out files whose path contains any of these
 ```
+
+A sub-folder with its own `mapwriter-pack.yaml` is a pack of its own, even inside another pack's folder.
 
 ## tags.yaml
 
@@ -109,7 +113,7 @@ Packs by different artists look different: one outlines everything in heavy blac
 - **The map's main style** is the first pack listed in the index, or the pack named by `style: { pack: ... }` in the scene.
 - **Missing art comes from the nearest style.** The main pack still supplies everything it has. When it has nothing for a word, the pack whose style is closest to the main one's goes next, rather than simply the next pack listed.
 - **A warning when styles clash.** If a map ends up with art in clearly different styles, `check` and `render` say which packs and how they differ.
-- **`style: { match: true }`** gently grades art from other packs towards the main style when painting: colour strength and brightness are moved part of the way (never more than about a third), and transparency is untouched. Outlines and shading drawn into the art stay as they are, so the nearest-style choice above matters most.
+- **`style: { match: true }`** grades art from other packs towards the main style when painting: colour strength (0.55 to 1.6 times) and brightness (0.7 to 1.3 times) move towards the main pack's, and when the main pack outlines its art in black and the other does not, a dark outline is drawn just inside the edge. Transparency is untouched.
 
 ```yaml
 style: { walls: stone wall, pack: Forgotten Adventures, match: true }
@@ -117,7 +121,9 @@ style: { walls: stone wall, pack: Forgotten Adventures, match: true }
 
 ## Several packs
 
-Index several folders into one file, or pass several `-i` indexes. The first pack listed that has the thing itself supplies it, so put your main pack first and the starter pack last as a fallback. For example, with Forgotten Adventures Core first, trees and crates come from FA, and market stalls (which Core lacks) come from the starter pack. With pictures measured, packs after the first are tried in order of how close their style is to the first pack's (see Mixing packs).
+Index several folders into one file, or pass several `-i` indexes. If one folder holds several packs side by side (say a Forgotten Adventures folder next to a 2-Minute Tabletop one), index it with `--packs` so each top-level sub-folder counts as its own pack, or put a `mapwriter-pack.yaml` in each. Otherwise they share one style, and style matching cannot tell them apart; `mapwriter look` warns when a pack's folders look like different artists.
+
+Finished maps kept among your art (pictures with no size in their name and at least 20 squares each way) are filed as kind `map`, and demo or preview sheets as `sheet`, so neither is ever picked as a prop or floor. The first pack listed that has the thing itself supplies it, so put your main pack first and the starter pack last as a fallback. For example, with Forgotten Adventures Core first, trees and crates come from FA, and market stalls (which Core lacks) come from the starter pack. With pictures measured, packs after the first are tried in order of how close their style is to the first pack's (see Mixing packs).
 
 ## Licences
 

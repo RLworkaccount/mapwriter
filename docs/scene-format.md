@@ -10,7 +10,7 @@ A scene file is YAML. All positions and sizes are in grid squares (5 ft each). `
 | `grid` | `{ width, height, px_per_square }`. 140 px per square suits Foundry; FA art is drawn at 200 | `px_per_square: 140` |
 | `seed` | Any whole number. Changes random choices (which variant of a chair, where auto-placed props go) | `1` |
 | `ground` | Floor words for the whole map, e.g. `grass`, `cobblestone` | `stone floor` |
-| `style` | `{ walls, doors, windows }`: words for the default wall, door and window art. Also `pack`: the pack whose look the map keeps to, and `match: true` to even out the colour and brightness of art from other packs (see [Mixing packs](asset-packs.md#mixing-packs)) | `stone wall`, `wood door`, `wood window`; the first pack listed; no matching |
+| `style` | `{ walls, doors, windows }`: words for the default wall, door and window art. Also `pack`: the pack whose look the map keeps to, and `match: true` to even out the colour, brightness and outlines of art from other packs (see [Mixing packs](asset-packs.md#mixing-packs)) | `stone wall`, `wood door`, `wood window`; the first pack listed; no matching |
 | `areas` | Floors without walls (lawns, yards, mud, squares) | none |
 | `paths` | Strips of floor along a line (roads, tracks, footpaths) | none |
 | `water` | Ponds, lakes, rivers and streams, with banks | none |

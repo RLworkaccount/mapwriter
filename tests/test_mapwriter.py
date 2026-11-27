@@ -934,3 +934,59 @@ def test_browser_page_and_its_tags_file_format(tmp_path):
     (tmp_path / "tags.yaml").write_text('"p/IMG_9.png": ["boulder", "stone"]\nkinds:\n  "p/IMG_9.png": prop\n')
     idx.apply_tags(tmp_path / "tags.yaml")
     assert idx.pick("boulder").name == "IMG_9.png"
+
+
+# ------------------------------------------------------------------ v0.4 fixes from the full-pack test
+def test_sub_packs_maps_and_demo_sheets(tmp_path):
+    muted = lambda i: _blob((120 + 4 * i, 100, 80), 0.38)
+    root = tmp_path / "All art"
+    _pack(root / "Soft pack", {f"p/Chair_{i}_1x1.png": ((200, 200), muted(i)) for i in range(3)})
+    _pack(root / "Inky pack", {f"p/Barrel_{i}_1x1.png": ((200, 200), _inked((230, 120, 20))) for i in range(3)})
+    _pack(root / "Own pack", {"Crate_1x1.png": ((200, 200), muted(1))})
+    (root / "Own pack" / "mapwriter-pack.yaml").write_text("name: Mine\nskip: [Old]\n")
+    _pack(root / "Own pack", {"Old/Crate_2_1x1.png": ((200, 200), muted(2))})
+    _pack(root / "Finished maps", {"Harbour Day.png": ((4200, 4000), lambda d, im: d.rectangle([0, 0, 4200, 4000], fill=(90, 120, 140))), "River Demo.png": ((400, 300), _noise)})
+    one = Index.build([str(root)])
+    assert set(one.pack_order) == {"All art", "Mine"}                    # a pack yaml makes its own pack
+    assert one.get("Harbour Day.png").kind == "map" and one.get("River Demo.png").kind == "sheet"
+    assert one.get("Crate_2_1x1.png") is None                             # skip: in the pack yaml
+    assert one.pick("harbour") is None
+    split = Index.build([str(root)], split=True)
+    assert {"Soft pack", "Inky pack", "Mine", "Finished maps"} <= set(split.pack_order)
+    from mapwriter.assets.style import mixed_packs
+    one.add_looks(workers=2)
+    assert [m[0] for m in mixed_packs(one, min_props=3)] == ["All art"]
+
+
+def test_signs_and_trophies_rank_below_the_thing(tmp_path):
+    names = ["Signs/Plant_Identifier_Sign_1x1.webp", "Nature/Plant_Potted_A_1x1.webp",
+             "Wall/Trophy - Fish.png", "Food/Fish_01_Pile_1x1.webp"]
+    idx = Index([describe(n, "P", "/p") for n in names])
+    assert idx.pick("plant").name == "Plant_Potted_A_1x1.webp"
+    assert idx.pick("fish").name == "Fish_01_Pile_1x1.webp"
+    assert idx.pick("fish trophy").name == "Trophy - Fish.png"
+    assert idx.pick("sign").name == "Plant_Identifier_Sign_1x1.webp"
+
+
+def test_scatter_falls_back_to_smaller_trees(tmp_path):
+    names = ["T/Tree_Green_A_6x6.webp", "T/Tree_Green_B_3x3.webp", "T/Tree_Green_C_2x2.webp"]
+    idx = Index([describe(n, "P", "/p") for n in names])
+    assert idx.smaller("tree", idx.get("Tree_Green_A_6x6.webp")).name == "Tree_Green_B_3x3.webp"
+    sc = parse({"name": "s", "grid": {"width": 5, "height": 5}, "ground": None,
+                "props": [{"want": "tree", "file": "Tree_Green_A_6x6.webp", "at": [0, 0], "size": [1, 1]}],
+                "scatter": [{"want": "tree", "count": 2}]})
+    plan = build(sc, idx)
+    trees = [p for p in plan.props if p.want == "tree" and p.label is None and p.asset.name != "Tree_Green_A_6x6.webp"]
+    assert trees and all(p.asset.footprint[0] < 6 for p in trees)
+
+
+def test_grade_outline_darkens_edges_of_unlined_art():
+    from PIL import Image, ImageDraw
+    from mapwriter.assets.style import apply_grade, grade_for
+    g = grade_for({"ink": 0.0, "sat": 0.4, "bright": 0.6, "soft": 0.0}, {"ink": 0.3, "sat": 0.4, "bright": 0.6, "soft": 0.0})
+    assert g is not None and g[2] == 1.0
+    im = Image.new("RGBA", (400, 400), (0, 0, 0, 0))
+    ImageDraw.Draw(im).ellipse([40, 40, 360, 360], fill=(200, 170, 120, 255))
+    out = apply_grade(im, g)
+    assert out.getpixel((200, 43))[0] < 170 and out.getpixel((200, 200))[0] == 200
+    assert out.getchannel("A").tobytes() == im.getchannel("A").tobytes()
