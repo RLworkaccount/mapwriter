@@ -57,6 +57,26 @@ mapwriter render examples/tavern.yaml -o out
 
 Find art by words with `mapwriter search "round table"` or `mapwriter search planks -k floor`.
 
+## Start from a template, or talk to it
+
+```bash
+# Three tavern layouts and one image with their sketches side by side
+mapwriter new tavern -o scenes          # also: shop, house, market, clearing
+mapwriter render scenes/tavern-b.yaml -o out
+```
+
+To describe a map in your own words, MapWriter writes a brief for the AI assistant you already use (a claude.ai chat, Claude Code, or any other). It never calls an AI service itself and needs no API key.
+
+```bash
+mapwriter describe "a ruined watchtower on a cliff, with a goblin camp" -o scenes
+# give scenes/brief.md to your assistant, save its reply as reply.md, then:
+mapwriter apply reply.md -o scenes      # saves, checks and sketches each layout
+mapwriter edit scenes/watchtower-a.yaml "add a cellar under the tower" -o scenes
+mapwriter apply edit-reply.md --edit scenes/watchtower-a.yaml
+```
+
+The brief holds the scene format, the words your own packs use, and a template to start from. [docs/describe-with-ai.md](docs/describe-with-ai.md) has the details.
+
 ## A scene file
 
 Scene files are YAML, measured in 5 ft grid squares. `x` runs right and `y` runs down from the top-left corner.
@@ -96,7 +116,7 @@ See [docs/asset-packs.md](docs/asset-packs.md) for how packs are read, how to ad
 
 ## Roadmap
 
-v0.1 covers indoor scenes. v0.2 adds outdoor ground: rough soft-edged areas, paths along a line, ponds and rivers with banks, and scatter rules for trees, rocks, flowers and piles of clutter (see `examples/market.yaml` and `examples/garden-party.yaml`), plus `mapwriter pack-check` for new packs. Next up: describe and edit-in-words commands (v0.3), picture-based tagging for any pack (v0.4), whole-place generators (v0.5), full Foundry scenes (v0.6), and a web editor plus an MCP server (v0.7). Details in [ROADMAP.md](ROADMAP.md).
+v0.1 covers indoor scenes. v0.2 adds outdoor ground: rough soft-edged areas, paths along a line, ponds and rivers with banks, and scatter rules for trees, rocks, flowers and piles of clutter (see `examples/market.yaml` and `examples/garden-party.yaml`), plus `mapwriter pack-check` for new packs. v0.3 adds templates (`mapwriter new`) and briefs for your AI assistant (`describe`, `edit`, `apply`). Next up: picture-based tagging for any pack (v0.4), whole-place generators (v0.5), full Foundry scenes (v0.6), and a web editor plus an MCP server (v0.7). Details in [ROADMAP.md](ROADMAP.md).
 
 ## Licence
 

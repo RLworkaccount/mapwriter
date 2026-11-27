@@ -7,6 +7,10 @@
     mapwriter check scene.yaml              list problems with a scene
     mapwriter sketch scene.yaml             quick block plan (PNG)
     mapwriter render scene.yaml             painted maps, key, check, .dd2vtt
+    mapwriter new tavern --options 3        layouts from a template, with a sheet to choose from
+    mapwriter describe "a riverside mill"   write a brief for your AI assistant (no API key needed)
+    mapwriter edit scene.yaml "wider hall"  write a brief for a change
+    mapwriter apply reply.md                read the assistant's reply, check it, draw the options
 """
 from __future__ import annotations
 
@@ -112,7 +116,7 @@ def cmd_check(args):
 def cmd_sketch(args):
     from .build import write_sketch
     plan = _plan(args)
-    p = write_sketch(plan, args.out, args.px)
+    p = write_sketch(plan, args.out, args.px, rings=not args.no_light_rings)
     print(f"Sketch: {p}")
     _report(plan)
 
@@ -129,6 +133,115 @@ def cmd_render(args):
         c = out["counts"]
         print(f"Foundry export: {c['walls']} walls, {c['portals']} doors/windows, {c['lights']} lights")
     _report(plan)
+
+
+def _maybe_index(args):
+    paths = args.index or [DEFAULT_INDEX]
+    if all(os.path.exists(p) for p in paths):
+        return _load(args)
+    print(f"(No asset index at {paths[0]}: carrying on without one. Make one with: mapwriter index <asset folder>)", file=sys.stderr)
+    return None
+
+
+def _say_problems(problems: dict):
+    for f, ps in problems.items():
+        print(f"{f}: {'no problems' if not ps else f'{len(ps)} thing(s) to look at'}")
+        for w in ps:
+            print(f"  - {w}")
+
+
+def cmd_new(args):
+    from . import templates
+    from .build import slug
+    from .talk import write_options
+    w = h = None
+    if args.size:
+        try:
+            w, h = (int(v) for v in args.size.lower().split("x"))
+        except ValueError:
+            sys.exit("--size should look like 24x18")
+    try:
+        datas = [templates.make(args.template, i, args.seed, w, h, args.name) for i in range(args.options)]
+    except ValueError as e:
+        sys.exit(str(e))
+    stem = args.stem or slug(args.template)
+    header = (f"Made by: mapwriter new {args.template} (layout {{}} of {args.options}, seed {args.seed}).\n"
+              "Edit freely: change sizes, move props, add notes. Check with: mapwriter check <this file>")
+    scenes = [("", d) for d in datas]
+    idx = _maybe_index(args)
+    res = write_options(scenes, idx, args.out, stem, None)
+    for i, (p, d) in enumerate(zip(res["files"], datas)):
+        from .yamlout import dump
+        p.write_text(dump(d, header.replace("{}", "ABCDEFGH"[i] if args.options > 1 else "1")), encoding="utf-8")
+        print(f"Layout {'ABCDEFGH'[i]}: {p}")
+    if res["sheet"]:
+        print(f"Side by side: {res['sheet']}")
+    _say_problems(res["problems"])
+
+
+def _write_brief(text, args, default_name):
+    if args.print:
+        print(text)
+        return
+    out = Path(args.out); out.mkdir(parents=True, exist_ok=True)
+    p = out / default_name
+    p.write_text(text, encoding="utf-8")
+    print(f"Brief: {p}")
+    print("Give it to your AI assistant (paste it into a chat, or attach the file).")
+    print(f"Save its whole reply as a text file, then run: mapwriter apply <reply file> -o {args.out}"
+          + (f" --edit {args.scene}" if getattr(args, "scene", None) else ""))
+
+
+def cmd_describe(args):
+    from .talk import describe_brief
+    text = describe_brief(args.request, _maybe_index(args), args.options, args.template)
+    _write_brief(text, args, "brief.md")
+
+
+def cmd_edit(args):
+    from .talk import edit_brief
+    if not os.path.exists(args.scene):
+        sys.exit(f"No scene file at {args.scene}")
+    text = edit_brief(args.scene, args.request, _maybe_index(args))
+    _write_brief(text, args, "edit-brief.md")
+
+
+def cmd_apply(args):
+    from .build import slug
+    from .scene import SceneError
+    from .talk import scenes_in_reply, write_options, fix_brief, apply_edit
+    reply = Path(args.reply).read_text(encoding="utf-8")
+    idx = _load(args)
+    if args.edit:
+        try:
+            r = apply_edit(reply, args.edit, idx, args.out)
+        except SceneError as e:
+            sys.exit(str(e))
+        print(f"Saved the new version to {r['scene']} (the old one is {r['previous']}).")
+        print(f"{len(r['changed_lines'])} line(s) changed.")
+        if r["sheet"]:
+            print(f"Before and after: {r['sheet']}")
+        _say_problems({str(r["scene"]): r["problems"]})
+        return
+    found = scenes_in_reply(reply)
+    for text, data, err in found:
+        if err:
+            print(f"Skipped a block that is {err}")
+    scenes = [(t, d) for t, d, e in found if d is not None]
+    if not scenes:
+        sys.exit("No scene files found in the reply. They should be in ```yaml blocks.")
+    stem = args.stem or slug(str(scenes[0][1].get("name", "map")))
+    res = write_options(scenes, idx, args.out, stem, keep_text=True)
+    for p in res["files"]:
+        print(f"Scene: {p}")
+    if res["sheet"]:
+        print(f"Side by side: {res['sheet']}")
+    _say_problems(res["problems"])
+    fb = fix_brief(res["problems"])
+    if fb:
+        q = Path(args.out) / "fix-brief.md"
+        q.write_text(fb, encoding="utf-8")
+        print(f"To have the assistant fix them, give it {q}")
 
 
 def main(argv=None):
@@ -158,12 +271,39 @@ def main(argv=None):
 
     p = sub.add_parser("sketch", help="draw a quick block plan"); p.add_argument("scene")
     p.add_argument("-o", "--out", default="out"); p.add_argument("--px", type=int, default=48)
+    p.add_argument("--no-light-rings", action="store_true", help="leave out the circles showing how far lights reach")
     _index_args(p); p.set_defaults(fn=cmd_sketch)
 
     p = sub.add_parser("render", help="paint the map and write all exports"); p.add_argument("scene")
     p.add_argument("-o", "--out", default="out"); p.add_argument("-f", "--format", default="webp", choices=["webp", "png", "jpg"])
     p.add_argument("-q", "--quality", type=int, default=88); p.add_argument("--no-foundry", action="store_true")
     _index_args(p); p.set_defaults(fn=cmd_render)
+
+    p = sub.add_parser("new", help="make layouts from a template (tavern, shop, house, market, clearing)")
+    p.add_argument("template"); p.add_argument("-o", "--out", default="scenes")
+    p.add_argument("-n", "--options", type=int, default=3, choices=range(1, 9), metavar="N", help="how many layouts (default 3)")
+    p.add_argument("--seed", type=int, default=1, help="change for different details")
+    p.add_argument("--size", help="map size in squares, e.g. 24x18"); p.add_argument("--name", help="map name")
+    p.add_argument("--stem", help="file name start (default: the template name)")
+    _index_args(p); p.set_defaults(fn=cmd_new)
+
+    p = sub.add_parser("describe", help="write a brief for your AI assistant to turn a description into scene files")
+    p.add_argument("request", help="the map in your own words")
+    p.add_argument("-o", "--out", default="scenes"); p.add_argument("-n", "--options", type=int, default=3)
+    p.add_argument("--template", help="start from this template (default: guessed from the words)")
+    p.add_argument("--print", action="store_true", help="print the brief instead of writing brief.md")
+    _index_args(p); p.set_defaults(fn=cmd_describe)
+
+    p = sub.add_parser("edit", help="write a brief for your AI assistant to change a scene file")
+    p.add_argument("scene"); p.add_argument("request", help="the change in your own words")
+    p.add_argument("-o", "--out", default="scenes"); p.add_argument("--print", action="store_true")
+    _index_args(p); p.set_defaults(fn=cmd_edit)
+
+    p = sub.add_parser("apply", help="read an assistant's reply: save, check and sketch the scenes in it")
+    p.add_argument("reply"); p.add_argument("-o", "--out", default="scenes")
+    p.add_argument("--edit", metavar="SCENE", help="the reply is a change to this scene file: save it as the new version")
+    p.add_argument("--stem", help="file name start (default: from the map name)")
+    _index_args(p); p.set_defaults(fn=cmd_apply)
 
     args = ap.parse_args(argv)
     args.fn(args)

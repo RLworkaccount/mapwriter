@@ -28,6 +28,7 @@ class Placed:
     shadow: bool = True
     flip: bool = False
     fit_rot: float = 0.0                      # extra rotation to make the image fit the box
+    part: str = ""                            # "top" for the upper piece of a layered asset
 
     @property
     def centre(self):
@@ -270,6 +271,10 @@ def build(scene: Scene, index: Index) -> Plan:
                 if pl.layer == 1:
                     occupied |= sq
             plan.props.append(pl)
+            # Base pieces with a separate top (well roofs, glass display tops) get the top too.
+            top = index.top_piece(a, seed + bi) if (a is not None and p.top) else None
+            if top is not None:
+                plan.props.append(Placed(name, top, box, rot, None, max(3, pl.layer + 1), p.scale, False, p.flip, fit_rot, part="top"))
             # automatic lights from candles, lanterns, fireplaces
             if a is not None and a.emits_light and p.light is not False:
                 r, c, inten = _auto_light(a)
@@ -403,7 +408,9 @@ def _scatter(plan: Plan, rule, si: int, index: Index, blocked_squares, taken, wa
         rim = [(x + r * dx, y + r * dy) for dx, dy in dirs]
         if any(g.contains(px, py) for g in solid for px, py in edge + rim):
             return False
-        if any((int(px), int(py)) in blocked_squares for px, py in edge):    # furniture stays visible
+        # Big pieces (tree canopies) keep their whole spread off furniture so it stays in view;
+        # small ones (a pile of crates) may sit snug against it.
+        if any((int(px), int(py)) in blocked_squares for px, py in (edge if r > 0.75 else edge[:1])):
             return False
         return all(math.hypot(x - tx, y - ty) >= r + tr + rule.gap for tx, ty, tr in taken)
 
@@ -444,7 +451,8 @@ def _scatter(plan: Plan, rule, si: int, index: Index, blocked_squares, taken, wa
         else:
             layer = int(rule.layer or 1)
         out.append(Placed(name, a, (x - fw / 2, y - fh / 2, x + fw / 2, y + fh / 2), rot, rule.label, layer, k))
-    if len(out) < n:
+    # A count is a promise; a density is a rough aim, so only a big shortfall is worth a warning.
+    if len(out) < n and (rule.count is not None or len(out) < n / 2):
         warn(f"Only room for {len(out)} of {n} '{name}' in {rule.within}.")
     if out and all(p.asset is None for p in out):
         warn(f"No asset matches '{name}'; it is shown as a labelled box.")
