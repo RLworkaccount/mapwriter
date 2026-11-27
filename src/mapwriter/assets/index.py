@@ -27,6 +27,12 @@ PART_WORDS = {"adornment", "part", "broken", "piece", "overlay", "top", "base", 
 THEME_WORDS = {"christmas", "christma", "holiday", "halloween", "feywild", "multicolor", "volcanic", "underdark", "astral",
                "horror", "ceremorph", "drow", "industrial", "fallen", "bare", "dead", "burnt", "ruined", "snow",
                "snowy", "frozen", "icy", "winter", "autumn", "grave", "burial", "ore", "pumpkin"}
+# Words for art drawn in or beside water (a rock with foam and ripples round it, a reed in a
+# pool). On dry ground that ring of white water looks wrong, so these lose points unless asked for.
+WET_WORDS = {"water", "river", "stream", "lake", "pond", "sea", "shore", "shoreline", "coast", "coastal", "splash",
+             "foam", "ripple", "ripples", "rapids", "waterfall", "wet", "submerged", "underwater", "swamp", "marsh"}
+# Stones and rocks: plain ones are grey or brown. A mostly white one is snowy, chalk or in foam.
+ROCK_HEADS = {"rock", "stone", "boulder", "pebble", "rubble"}
 COLOUR_WORDS = {"red", "blue", "green", "yellow", "orange", "purple", "pink", "white", "black", "grey", "gray",
                 "brown", "gold", "silver", "violet", "teal", "cyan", "magenta", "multicolor"}
 MIXED_COLOUR_HEADS = {"flower"}        # a flower bed may mix colours; trees and bushes keep one
@@ -204,6 +210,18 @@ def _named_for(filename: str, name_list: list[str]) -> set[str]:
     if len(parts) > 1:
         out |= set(naming.words(parts[1])[:1])
     return out
+
+
+def _share(look: dict | None, *colours: str) -> float:
+    """How much of a measured picture's drawn part is in these colours (0 to 1). Saved
+    indexes keep the shares in the look's signature, which lists COLOURS in order."""
+    if not look:
+        return 0.0
+    from .look import COLOURS
+    if look.get("mix"):
+        return sum(look["mix"].get(c, 0) for c in colours)
+    sig = look.get("sig") or []
+    return sum(sig[COLOURS.index(c)] / 100 for c in colours if COLOURS.index(c) < len(sig))
 
 
 def _drop_route_word(ws: list[str], kind: str | None) -> list[str]:
@@ -436,6 +454,10 @@ class Index:
                 s -= 1.5                    # 'Chair - Armchair' is a kind of chair, not a plain one
             if themes and not themes & asked:     # a Christmas tree sits in Holidays: asking for one is enough
                 s -= 3
+            if aw & WET_WORDS and not asked & WET_WORDS and head not in WET_WORDS:
+                s -= 2.5                    # a rock in a river, drawn with its foam: not for dry ground
+            if head in ROCK_HEADS and not asked_colours and _share(a.look, "white", "teal") >= 0.3:
+                s -= 2                      # looks white (snow, chalk or water round it) though the name is plain
             if head in FLORA_HEADS and ((name_words & COLOUR_WORDS) - {"green"} - asked):
                 s -= 2
             if (head in FLORA_HEADS and not asked_colours and "green" not in seen

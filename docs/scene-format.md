@@ -166,7 +166,7 @@ props:
 | `at` | Top-left corner of the squares it covers |
 | `centre` | Its centre point, instead of `at` |
 | `size` | `[w, h]` in squares. If the art is long the other way, it is turned to fit |
-| `rot` | Degrees clockwise. `0` means the back of the item faces north (chairs face south) |
+| `rot` | Degrees clockwise. `0` means the back of the item faces north (chairs face south). A chair, stool, armchair or other seat with no `rot` turns to face the nearest table, desk or counter beside it (on the diagonal at a corner) |
 | `in` | A room name: MapWriter finds free spots inside it, away from doors |
 | `along` | With `in`: put it against that wall (`north`, `south`, `east`, `west`), facing into the room |
 | `count` | How many, for `in` placement |
@@ -192,6 +192,7 @@ scatter:
   - { want: bush, density: 0.025, cluster: 3, spread: 1.2 }
   - { want: rock, in: duck pond bank, count: 3 }
   - { want: crate, in: Store room, count: 5, cluster: 5, spread: 0.8 }   # a pile of crates
+  - { want: flowers, in: rose bed, cover: 0.8, gap: -0.2 }               # a full flower bed
 ```
 
 | Key | Meaning | Default |
@@ -200,6 +201,7 @@ scatter:
 | `in` | An area, path, water (or its bank, e.g. `duck pond bank`) or room name, or `map` | `map` |
 | `count` | How many | |
 | `density` | How many per square, used when `count` is not given | |
+| `cover` | How much of the ground to cover, `0` to `1` (up to `1.5` with overlaps), used instead of `count` or `density`. MapWriter measures how much of its square the art draws, so a bed of small blooms gets enough of them to look full | |
 | `cluster` | Average number in each clump. `1` spreads them out evenly | `1` |
 | `spread` | How far a clump reaches from its middle, in squares | `1.5` |
 | `gap` | Space kept between items, in squares. Negative lets them overlap (tree canopies) | `0.1` |
@@ -210,7 +212,7 @@ scatter:
 | `avoid` | More names to keep off, or `none` to drop the defaults | |
 | `layer`, `label` | As for props. Trees go on top of everything else | |
 
-Scattered things keep off walled rooms, furniture, door squares and each other. On open ground (`in: map`) they also keep off every path, area and pond; inside a named place they keep off paths and water. The layout comes from the scene's `seed`, so it is the same every render. If there isn't room for them all, `mapwriter check` says how many fitted.
+Scattered things keep off walled rooms, furniture, door squares and each other. They are spaced by the part of the picture that is drawn, not the whole square, and without clumps each one goes in the free spot furthest from the others, so beds fill evenly. Art drawn in or beside water (a rock with foam round it, files with words such as river, pond or splash) loses out on dry ground unless the words ask for it; scattered in a pond or river, such art is preferred. On open ground (`in: map`) they also keep off every path, area and pond; inside a named place they keep off paths and water. The layout comes from the scene's `seed`, so it is the same every render. If there isn't room for them all, `mapwriter check` says how many fitted.
 
 ## Lights
 

@@ -146,6 +146,7 @@ class Prop:
     flip: bool = False
     top: bool = True              # draw the pack's matching top piece, if it has one
     overlap: bool = False         # built to overlap other furniture: no overlap warning
+    turned: bool = False          # rot was given; seats without one turn to face the nearest table
 
 
 @dataclass
@@ -182,6 +183,7 @@ class Scatter:
     avoid: list[str] | None = None # extra names to keep off; "none" clears the defaults
     layer: int | None = None
     label: str | None = None
+    cover: float | None = None     # share of the ground to cover (a flower bed), whatever size the art is
 
 
 @dataclass
@@ -468,7 +470,7 @@ def parse(data: dict, source: str | None = None) -> Scene:
             count=int(p.get("count", 1)), label=p.get("label"), light=p.get("light"),
             scale=float(p.get("scale", 1.0)), layer=p.get("layer"), vary=bool(p.get("vary", False)),
             shadow=bool(p.get("shadow", True)), flip=bool(p.get("flip", False)), top=bool(p.get("top", True)),
-            overlap=_yes(p.get("overlap", False))))
+            overlap=_yes(p.get("overlap", False)), turned="rot" in p))
         pr = sc.props[-1]
         if pr.at is None and pr.centre is None and pr.room is None:
             raise SceneError(f"{what} ({pr.want or pr.file}): give at: [x, y], centre: [x, y], or in: <room>")
@@ -495,9 +497,13 @@ def parse(data: dict, source: str | None = None) -> Scene:
                        float(sp.get("cluster", 1)), float(sp.get("spread", 1.5)), float(sp.get("gap", 0.1)),
                        turn, (float(sc_[0]), float(sc_[1])),
                        _pt(sp["size"], what + " size") if "size" in sp else None,
-                       bool(sp.get("vary", True)), avoid, sp.get("layer"), sp.get("label"))
-        if rule.count is None and rule.density is None:
-            raise SceneError(f"{what}: give count: (how many) or density: (how many per square)")
+                       bool(sp.get("vary", True)), avoid, sp.get("layer"), sp.get("label"),
+                       float(sp["cover"]) if "cover" in sp else None)
+        if rule.count is None and rule.density is None and rule.cover is None:
+            raise SceneError(f"{what}: give count: (how many), density: (how many per square) "
+                             f"or cover: (how much of the ground, 0 to 1)")
+        if rule.cover is not None and not 0 < rule.cover <= 1.5:
+            raise SceneError(f"{what}: cover is a share of the ground, such as 0.7 (up to 1.5 for overlapping beds)")
         sc.scatter.append(rule)
 
     for i, l in enumerate(data.get("lights") or []):

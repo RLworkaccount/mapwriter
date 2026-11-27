@@ -934,3 +934,66 @@ def test_browser_page_and_its_tags_file_format(tmp_path):
     (tmp_path / "tags.yaml").write_text('"p/IMG_9.png": ["boulder", "stone"]\nkinds:\n  "p/IMG_9.png": prop\n')
     idx.apply_tags(tmp_path / "tags.yaml")
     assert idx.pick("boulder").name == "IMG_9.png"
+
+
+# ------------------------------------------------------------------ outdoor placement fixes
+def test_chairs_without_rot_face_the_nearest_table(starter):
+    data = {"name": "Seats", "grid": {"width": 10, "height": 10}, "ground": "grass", "props": [
+        {"want": "round table", "at": [4, 4], "size": [2, 2]},
+        {"want": "chair", "at": [3, 4]}, {"want": "chair", "at": [6, 5]}, {"want": "chair", "at": [4, 3]},
+        {"want": "chair", "at": [5, 6]}, {"want": "chair", "at": [3, 3]},
+        {"want": "chair", "at": [8, 8]}, {"want": "chair", "at": [6, 4], "rot": 180}]}
+    chairs = [p for p in build(parse(data), starter).props if p.want == "chair"]
+    # rot 0 has the back to the north, so the seat faces south.
+    assert [c.rot for c in chairs] == [270, 90, 0, 180, 315, 0, 180]
+
+
+def test_rocks_in_water_lose_on_dry_ground_and_win_in_ponds():
+    names = ["Nature/Rocks/Rock_Gray_A_1x1.png", "Nature/Rocks/Rock_Gray_B_1x1.png",
+             "River and Water Assets/Rocks/Rock_River_Foam_A_1x1.png"]
+    idx = Index([describe(n, "P", "/p") for n in names])
+    assert {idx.pick("rock", seed=s).name for s in range(10)} <= {"Rock_Gray_A_1x1.png", "Rock_Gray_B_1x1.png"}
+    assert idx.pick("water rock").name == "Rock_River_Foam_A_1x1.png"
+    assert idx.pick("river rock").name == "Rock_River_Foam_A_1x1.png"
+    # A rock whose picture is mostly white (snow, chalk, foam) loses to a grey one when no colour is asked.
+    from mapwriter.assets.look import COLOURS
+    grey, white = (describe(n, "P", "/p") for n in ("Rock_A_1x1.png", "Rock_B_1x1.png"))
+    grey.look = {"sig": [100 if c == "grey" else 0 for c in COLOURS] + [40] * 6, "colours": ["grey"]}
+    white.look = {"sig": [70 if c == "white" else 30 if c == "grey" else 0 for c in COLOURS] + [40] * 6,
+                  "colours": ["white", "grey"]}
+    idx = Index([white, grey])
+    assert all(idx.pick("rock", seed=s) is grey for s in range(6))
+    assert idx.pick("white rock") is white
+
+
+def test_rocks_scattered_in_a_pond_ask_for_water_art(tmp_path):
+    from mapwriter.testart import build_pack
+    from PIL import Image
+    build_pack(tmp_path)
+    (tmp_path / "Water").mkdir()
+    Image.new("RGBA", (200, 200), (200, 220, 230, 255)).save(tmp_path / "Water" / "Rock_River_Foam_1x1.png")
+    idx = Index.build([str(tmp_path)])
+    data = {"name": "Pond", "grid": {"width": 12, "height": 10}, "ground": "grass",
+            "water": [{"name": "pond", "circle": [6, 5, 3], "bank": {"floor": "cobblestone", "width": 0.6}}],
+            "scatter": [{"want": "rock", "in": "pond", "count": 3}, {"want": "rock", "in": "pond bank", "count": 3}]}
+    plan = build(parse(data), idx)
+    rocks = [p for p in plan.props if p.want == "rock"]
+    assert len(rocks) == 6
+    assert all("River" in p.asset.name for p in rocks[:3])
+    assert not any("River" in p.asset.name for p in rocks[3:])
+
+
+def test_cover_fills_a_bed_evenly_with_small_art(starter):
+    data = {"name": "Bed", "grid": {"width": 10, "height": 8}, "ground": "grass",
+            "areas": [{"name": "bed", "box": [1, 1, 9, 7], "floor": "dirt"}],
+            "scatter": [{"want": "flowers", "in": "bed", "cover": 0.8, "gap": -0.2}]}
+    plan = build(parse(data), starter)
+    flowers = [p for p in plan.props if p.want == "flowers"]
+    # Starter flowers draw on about 60% of their square each way, so 0.8 of 48 squares needs about 100.
+    assert len(flowers) > 70 and not plan.warnings
+    # Even: every square of the bed has a flower within reach.
+    for x in range(1, 9):
+        for y in range(1, 7):
+            assert min((p.centre[0] - x - 0.5) ** 2 + (p.centre[1] - y - 0.5) ** 2 for p in flowers) < 0.8 ** 2
+    with pytest.raises(SceneError, match="cover"):
+        parse({**data, "scatter": [{"want": "flowers", "in": "bed", "cover": 3}]})
