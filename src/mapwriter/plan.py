@@ -46,7 +46,7 @@ class Placed:
     flip: bool = False
     fit_rot: float = 0.0                      # extra rotation to make the image fit the box
     part: str = ""                            # "top" for the upper piece of a layered asset
-    grade: tuple[float, float] | None = None  # (colour strength, brightness) to match the map's main style
+    grade: tuple | None = None                # (colour strength, brightness, outline) to match the main style
 
     @property
     def centre(self):
@@ -538,18 +538,27 @@ def _scatter(plan: Plan, rule, si: int, index: Index, blocked_squares, taken, wa
     for i in range(n):
         a = choose(i) if (rule.vary or art is None) else art
         art = art or a
-        fw, fh = rule.size or (tuple(a.footprint) if a is not None and a.footprint else (1, 1))
         k = rnd.uniform(*rule.scale)
-        r = 0.5 * min(fw, fh) * k * 0.9
-        for t in range(80):
-            if centres:
-                cx, cy = centres[(i + t // 12) % len(centres)]     # a full clump hands on to the next
-                x, y = rnd.gauss(cx, rule.spread / 2), rnd.gauss(cy, rule.spread / 2)
-            else:
-                x, y = rnd.uniform(x0, x1), rnd.uniform(y0, y1)
-            if free(x, y, r):
+        placed = False
+        for _size_try in range(4):
+            fw, fh = rule.size or (tuple(a.footprint) if a is not None and a.footprint else (1, 1))
+            r = 0.5 * min(fw, fh) * k * 0.9
+            for t in range(80):
+                if centres:
+                    cx, cy = centres[(i + t // 12) % len(centres)]     # a full clump hands on to the next
+                    x, y = rnd.gauss(cx, rule.spread / 2), rnd.gauss(cy, rule.spread / 2)
+                else:
+                    x, y = rnd.uniform(x0, x1), rnd.uniform(y0, y1)
+                if free(x, y, r):
+                    placed = True
+                    break
+            if placed or rule.size or a is None:
                 break
-        else:
+            # No room for art this big: try the next size down from the same pack (a smaller tree).
+            a = index.smaller(name, a, "prop", seed=sc.seed + i)
+            if a is None:
+                break
+        if not placed:
             continue
         taken.append((x, y, r))
         rot = {"any": rnd.uniform(0, 360), "square": rnd.choice([0, 90, 180, 270]), "none": 0.0}[rule.turn]

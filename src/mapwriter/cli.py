@@ -51,7 +51,7 @@ def cmd_starter(args):
 
 def cmd_index(args):
     from .assets.index import Index
-    idx = Index.build(args.folders, read_sizes=not args.fast)
+    idx = Index.build(args.folders, read_sizes=not args.fast, split=args.packs)
     if os.path.exists(args.output):
         # Keep pictures already measured, so re-indexing only looks at new or changed files.
         try:
@@ -98,7 +98,11 @@ def _say_looks(r: dict, suggest_path):
 
 
 def _say_styles(idx):
-    from .assets.style import describe
+    from .assets.style import describe, mixed_packs
+    for pack, a, sa, b, sb in mixed_packs(idx):
+        print(f"Pack '{pack}' may be several packs: its folder '{a}' ({describe(sa)}) and folder '{b}' "
+              f"({describe(sb)}) differ. Index it with --packs, or put a mapwriter-pack.yaml in each, "
+              "so style matching can tell them apart.")
     styled = [(p, idx.styles.get(p)) for p in idx.pack_order if idx.styles.get(p)]
     if not styled:
         return
@@ -117,10 +121,12 @@ def yaml_key(text: str) -> str:
 def cmd_browse(args):
     from .browse import write_browser
     idx = _load(args)
+    mine = [a for a in idx.assets if not args.pack or a.pack in args.pack]
+    if args.pack and not mine:
+        sys.exit(f"No pack called {', '.join(args.pack)}. Packs are: {', '.join(idx.pack_order)}.")
     p = write_browser(idx, args.out, thumbs=not args.no_thumbs, workers=args.workers, packs=args.pack, progress=_progress)
-    measured = sum(1 for a in idx.assets if a.look)
-    print(f"Asset browser: {p} ({len(idx.assets)} pictures). Open it in your browser; it stays on this computer.")
-    if measured < len(idx.assets):
+    print(f"Asset browser: {p} ({len(mine)} pictures). Open it in your browser; it stays on this computer.")
+    if sum(1 for a in mine if a.look) < len(mine):
         print("Tip: run mapwriter look first to add colours, look-alikes and guessed words to the page.")
 
 
@@ -357,6 +363,8 @@ def main(argv=None):
     p = sub.add_parser("index", help="scan asset folders into an index file")
     p.add_argument("folders", nargs="+"); p.add_argument("-o", "--output", default=DEFAULT_INDEX)
     p.add_argument("--fast", action="store_true", help="skip reading image sizes")
+    p.add_argument("--packs", action="store_true", help="each top-level sub-folder is a pack of its own "
+                   "(for a folder that holds several packs side by side)")
     p.add_argument("--look", action="store_true", help="also measure each picture (same as running mapwriter look after)")
     p.add_argument("--workers", type=int, default=8, help="pictures to read at once")
     p.set_defaults(fn=cmd_index)
