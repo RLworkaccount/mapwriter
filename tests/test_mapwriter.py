@@ -506,6 +506,18 @@ def test_uvtt_foundry_fixes(starter):
     assert d["lights"][0]["intensity"] == pytest.approx(0.8 * LIGHT_SCALE)
 
 
+def test_uvtt_per_version_lights_and_ambient(starter):
+    from mapwriter.export.uvtt import uvtt_data
+    sc = parse({"name": "d", "grid": {"width": 10, "height": 8},
+                "lighting": {"versions": ["day", "night"], "day": {"ambient": [250, 240, 220]}, "night": {"ambient": [60, 70, 120]}},
+                "lights": [{"at": [2, 2]}, {"at": [5, 5], "when": "night", "colour": "moon"}]})
+    plan = build(sc, starter)
+    day, night = uvtt_data(plan, None, version="day"), uvtt_data(plan, None, version="night")
+    assert len(day["lights"]) == 1 and len(night["lights"]) == 2      # the night-only moon stays out of the day file
+    assert day["environment"]["ambient_light"] == "fffaf0dc"
+    assert night["environment"]["ambient_light"] == "ff3c4678"
+
+
 def test_sketch_light_rings_optional(starter):
     from mapwriter.render.sketch import sketch
     sc = parse({"name": "l", "grid": {"width": 8, "height": 8}, "lights": [{"at": [4, 4], "radius": 3}]})

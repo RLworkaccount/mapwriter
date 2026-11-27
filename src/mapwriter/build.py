@@ -52,7 +52,7 @@ def render_all(plan: Plan, out_dir, image_format="webp", quality=88, uvtt=True) 
         written[f"{version} image"] = p
         if uvtt:
             q = out / f"{name}-{version}.dd2vtt"
-            counts = write_dd2vtt(plan, im, q)
+            counts = write_dd2vtt(plan, im, q, version=version)
             written[f"{version} foundry"] = q
             written["counts"] = counts
     first = images[plan.scene.versions[0]]

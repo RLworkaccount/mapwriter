@@ -45,7 +45,10 @@ def _portal(a, b, closed):
             "rotation": 0 if ay == by else math.pi / 2, "closed": closed, "freestanding": False}
 
 
-def uvtt_data(plan: Plan, image: Image.Image | None, fmt="webp", quality=88, step=2.0, light_scale=LIGHT_SCALE):
+def uvtt_data(plan: Plan, image: Image.Image | None, fmt="webp", quality=88, step=2.0, light_scale=LIGHT_SCALE,
+              version: str | None = None):
+    """version (day, night, sunset...) keeps only that version's lights and uses its ambient.
+    Left out, every light is written with the night ambient."""
     sc = plan.scene
     # For sight, every opening is a gap; windows and doors come back as portals.
     segs = merge_walls(plan.raw_walls, [o for o, _ in plan.openings if o.kind != "secret"])
@@ -61,12 +64,14 @@ def uvtt_data(plan: Plan, image: Image.Image | None, fmt="webp", quality=88, ste
         else:
             portals.append(_portal(o.a, o.b, o.kind != "window"))
     lights = [{"position": {"x": L.at[0], "y": L.at[1]}, "range": L.radius, "intensity": round(L.intensity * light_scale, 2),
-               "color": "ff%02x%02x%02x" % tuple(L.colour), "shadows": True} for L in plan.lights]
+               "color": "ff%02x%02x%02x" % tuple(L.colour), "shadows": True} for L in plan.lights
+              if version is None or L.when in ("both", version)]
+    ambient = sc.ambient.get(version or "night") or sc.ambient.get("night", (80, 86, 130))
     data = {"format": 0.3,
             "resolution": {"map_origin": {"x": 0, "y": 0}, "map_size": {"x": sc.width, "y": sc.height},
                            "pixels_per_grid": sc.px_per_square},
             "line_of_sight": los, "objects_line_of_sight": [], "portals": portals,
-            "environment": {"baked_lighting": True, "ambient_light": "ff%02x%02x%02x" % tuple(sc.ambient.get("night", (80, 86, 130)))},
+            "environment": {"baked_lighting": True, "ambient_light": "ff%02x%02x%02x" % tuple(ambient)},
             "lights": lights}
     if image is not None:
         buf = io.BytesIO()
@@ -80,8 +85,8 @@ def uvtt_data(plan: Plan, image: Image.Image | None, fmt="webp", quality=88, ste
     return data
 
 
-def write_dd2vtt(plan: Plan, image: Image.Image, path, fmt="webp", quality=88):
-    data = uvtt_data(plan, image, fmt, quality)
+def write_dd2vtt(plan: Plan, image: Image.Image, path, fmt="webp", quality=88, version: str | None = None):
+    data = uvtt_data(plan, image, fmt, quality, version=version)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f)
     return {"walls": len(data["line_of_sight"]), "portals": len(data["portals"]), "lights": len(data["lights"])}
