@@ -49,6 +49,12 @@ class Asset:
     ppsq: int = DEFAULT_PPSQ
     extra_tags: list[str] = field(default_factory=list)
     credit: str | None = None     # the pack's credit line, from mapwriter-pack.yaml
+    look: dict | None = None      # what the picture looks like (assets/look.py), if measured
+    guessed: list[str] = field(default_factory=list)   # words guessed from the picture, for vague names
+
+    @property
+    def seen_colours(self) -> set[str]:
+        return set(self.look.get("colours", ())) if self.look else set()
 
     @property
     def path(self) -> str:
@@ -177,6 +183,19 @@ def describe(rel: str, pack: str, root: str, ppsq: int = DEFAULT_PPSQ, overrides
                  ppsq=ppsq, extra_tags=extra)
 
 
+# Words in file names that say nothing about what the picture shows.
+GENERIC_WORDS = {"img", "image", "asset", "object", "item", "prop", "untitled", "sprite", "dsc", "final", "new",
+                 "copy", "token", "file", "pic", "picture", "export", "layer", "render", "sheet", "scan", "photo"}
+GUESS_MAX = 10.0         # likeness() distance within which a vague file takes a group's word
+GUESS_MARGIN = 2.0       # ...and the next nearest group must be this much further off
+
+
+def is_vague(a: Asset) -> bool:
+    """True when the file name gives a search nothing to go on (IMG_0042.png, 17.webp) and
+    no tags.yaml or pack manifest words were added."""
+    return not a.extra_tags and not (set(naming.words(os.path.basename(a.rel))) - GENERIC_WORDS)
+
+
 def _named_for(filename: str, name_list: list[str]) -> set[str]:
     """The words a file is named for: its first word, and with 2-Minute Tabletop style
     'Storage - Crate 1 - Dark.png' names also the first word after the category."""
@@ -216,7 +235,7 @@ class Index:
                 aw = aw | {"arranged"}
             self._words[id(a)] = (aw, nw, _named_for(a.name, name_list), themes)
             by_kind = self._postings.setdefault(a.kind, {})
-            for w in aw:
+            for w in aw | set(a.guessed):
                 by_kind.setdefault(w, []).append(a)
                 self._postings[None].setdefault(w, []).append(a)
 
@@ -262,6 +281,73 @@ class Index:
                     a.kind = k
         self._reindex()
 
+    # ---------- pictures ----------
+    def add_looks(self, workers: int = 8, force: bool = False, progress=None) -> dict:
+        """Measure the pictures (see assets/look.py), then use what they show: seamless
+        textures filed among props become floors, and files with vague names get a word
+        guessed from the named files they look most like."""
+        from .look import look_all
+        n = look_all(self.assets, workers=workers, force=force, progress=progress)
+        floors = self._floors_from_looks()
+        guesses = self.guess_words()
+        self._reindex()
+        return {"measured": n, "looked": sum(1 for a in self.assets if a.look), "floors": floors, "guessed": guesses}
+
+    def _floors_from_looks(self) -> list[Asset]:
+        out = []
+        for a in self.assets:
+            lk = a.look
+            if (a.kind == "prop" and lk and lk.get("tile") and lk.get("fill", 0) > 0.99 and a.px
+                    and naming.footprint(a.name) is None and min(a.px) >= 2 * a.ppsq):
+                a.kind, a.footprint = "floor", None
+                out.append(a)
+        return out
+
+    def guess_words(self) -> list[tuple[Asset, str, float]]:
+        """Give each vague-named file the word of the group of named files it looks most
+        like, when one group is clearly nearest. Groups are files of the same kind that
+        share a first word (Barrel_*, Crate_*), with at least three measured pictures.
+        Guessed words count for less than real ones and the plan says when one was used."""
+        from .look import centre, likeness
+        groups: dict[tuple[str, str], list[list[int]]] = {}
+        vague = []
+        for a in self.assets:
+            if not a.look or not a.look.get("sig"):
+                continue
+            if is_vague(a):
+                a.guessed = []
+                vague.append(a)
+                continue
+            first = [w for w in naming.words(os.path.basename(a.rel)) if w not in GENERIC_WORDS][:1]
+            if first and not (set(a.words) & PART_WORDS):
+                groups.setdefault((a.kind, first[0]), []).append(a.look["sig"])
+        mids: dict[str, list[tuple[str, list[int]]]] = {}
+        for (kind, word), sigs in groups.items():
+            if len(sigs) >= 3:
+                mids.setdefault(kind, []).append((word, centre(sigs)))
+        out = []
+        for a in vague:
+            near = sorted((likeness(a.look["sig"], mid), word) for word, mid in mids.get(a.kind, ()))
+            if not near or near[0][0] > GUESS_MAX:
+                continue
+            if len(near) > 1 and near[1][0] - near[0][0] < GUESS_MARGIN:
+                continue
+            a.guessed = [near[0][1]]
+            out.append((a, near[0][1], round(near[0][0], 1)))
+        return out
+
+    def look_alikes(self, asset: Asset, limit: int = 10, kind: str | None = None) -> list[tuple[float, Asset]]:
+        """Assets whose pictures look most like ``asset``'s, nearest first."""
+        from .look import likeness
+        if not asset.look or not asset.look.get("sig"):
+            return []
+        sig = asset.look["sig"]
+        kind = kind or asset.kind
+        res = [(likeness(sig, a.look["sig"]), a) for a in self._by_kind.get(kind, ())
+               if a is not asset and a.look and a.look.get("sig")]
+        res.sort(key=lambda t: (t[0], t[1].id))
+        return res[:limit]
+
     # ---------- search ----------
     def kinds(self) -> dict[str, int]:
         return {k: len(v) for k, v in sorted(self._by_kind.items())}
@@ -276,8 +362,15 @@ class Index:
         """Rank assets for a plain description such as 'small round table' or 'warm wood planks'.
 
         The last word is the main noun and must match (directly or by synonym).
-        Other words add points. A footprint close to ``size`` adds points.
+        Other words add points. A footprint close to ``size`` adds points. Where pictures
+        have been measured (``mapwriter look``), colours seen in the picture count too, and
+        art that looks unlike the files named for the thing loses points.
         """
+        return [(s, a) for s, a, _u in self._search(want, kind, size, limit)]
+
+    def _search(self, want, kind, size, limit):
+        """As search(), with a third value per result: True when the picture looks unlike
+        the files named for the thing (a handcart that has 'apple' in its name)."""
         ws = [w for w in naming.words(want) if w not in SIZE_WORDS]
         size_word = next((SIZE_WORDS[w] for w in naming.words(want) if w in SIZE_WORDS), 0)
         ws = _drop_route_word(ws, kind)
@@ -288,9 +381,16 @@ class Index:
         mods = [(w, expand(w)) for w in ws[:-1]]
         asked = set(ws)
         scored = []
+        asked_colours = {("grey" if w == "gray" else w) for w in asked} & COLOUR_WORDS
         for a in self._candidates(kind, head_opts):
             aw, name_words, first, themes = self._words[id(a)]
-            s = 10.0 if head in aw else 7.0
+            seen = a.seen_colours
+            if head in aw:
+                s = 10.0
+            elif head_opts & aw:
+                s = 7.0
+            else:
+                s = 5.0                     # only a word guessed from the picture
             if head_opts & name_words:
                 s += 3
             if head in first:               # named for the thing itself: Dirt_A_01, not Stone_Floor_Dirt
@@ -303,7 +403,14 @@ class Index:
                 s -= 3
             if head in FLORA_HEADS and ((name_words & COLOUR_WORDS) - {"green"} - asked):
                 s -= 2
+            if (head in FLORA_HEADS and not asked_colours and "green" not in seen
+                    and seen & {"red", "orange", "yellow", "pink", "purple", "white"}):
+                s -= 1.5                    # looks autumnal or in flower though the name is plain
             for w, opts in mods:
+                cw = "grey" if w == "gray" else w
+                if cw in COLOUR_WORDS and seen and cw not in aw:
+                    s += 1.5 if cw in seen else -1.0       # 'red apple': the picture is red, or not
+                    continue
                 if w in aw:
                     s += 2.5 if w in name_words else 1.5
                     if w in name_words and w in THEME_WORDS | COLOUR_WORDS:
@@ -335,9 +442,37 @@ class Index:
             if kind == "floor" and aw & {"floor", "flooring"}:
                 s += 2
             s -= 0.01 * len(aw)
-            scored.append((s, a))
+            scored.append([s, a, False, head in first and not junk])
+        self._judge_looks(scored)
         scored.sort(key=lambda t: (-t[0], t[1].id))
-        return scored[:limit]
+        return [(s, a, u) for s, a, u, _e in scored[:limit]]
+
+    LOOK_FAR = 24.0      # likeness() distance beyond which art looks unlike the named files
+    LOOK_NEAR = 9.0
+
+    def _judge_looks(self, scored):
+        """Compare each candidate's picture with the middle look of the files named for the
+        thing itself (Apple_Red_1x1, Apple_Green_1x1...). A file that only has the word
+        somewhere else in its name and looks nothing like them is probably something else."""
+        from .look import centre, likeness
+        exemplars = [t for t in scored if t[3] and t[1].look and t[1].look.get("sig")]
+        if not exemplars:
+            return
+        mid = centre([t[1].look["sig"] for t in exemplars])
+        sure = len(exemplars) >= 2
+        for t in scored:
+            lk = t[1].look
+            if not lk or not lk.get("sig"):
+                continue
+            d = likeness(lk["sig"], mid)
+            if t[3]:
+                if len(exemplars) >= 3 and d > self.LOOK_FAR:
+                    t[0] -= 1.0             # an odd one out among the named files
+            elif d > self.LOOK_FAR:
+                t[0] -= 2.5 if sure else 1.5
+                t[2] = True
+            elif d < self.LOOK_NEAR and sure:
+                t[0] += 0.5
 
     def loose(self, want: str, asset: "Asset", kind: str | None = "prop") -> bool:
         """True when ``asset`` matched ``want`` only through a synonym of its main noun,
@@ -347,6 +482,11 @@ class Index:
             return False
         # Also loose: only a part of the thing, such as a tree stump for 'tree'.
         return ws[-1] not in asset.all_words or bool((asset.all_words & PART_WORDS) - set(ws))
+
+    def by_look(self, want: str, asset: "Asset", kind: str | None = "prop") -> bool:
+        """True when ``asset`` matched ``want`` only through a word guessed from its picture."""
+        ws = _drop_route_word([w for w in naming.words(want) if w not in SIZE_WORDS], kind)
+        return bool(ws) and not (expand(ws[-1]) & asset.all_words) and bool(expand(ws[-1]) & set(asset.guessed))
 
     # Packs such as Forgotten Adventures split some pieces into a base and a top
     # (Display_Case_Base_* and Display_Case_Top_*): the top is drawn above tokens.
@@ -398,12 +538,14 @@ class Index:
         With ``small``, 1x1 art wins when there is any that is not only a loose match: 'apple'
         gets an apple rather than a handcart of apples from another pack.
         """
-        res = self.search(want, kind, size, limit=None)
-        if not res:
+        found = self._search(want, kind, size, limit=None)
+        if not found:
             return None
+        unlike = {id(a) for _s, a, u in found if u}
+        res = [(s, a) for s, a, _u in found]
         if small:
             ones = [(s, a) for s, a in res if a.footprint and a.footprint[0] * a.footprint[1] <= 1
-                    and not self.loose(want, a, kind)]
+                    and not self.loose(want, a, kind) and id(a) not in unlike]
             if ones:
                 res = ones
         # The first pack listed that has the thing itself (not only something with a similar
@@ -411,7 +553,7 @@ class Index:
         rank = {p: i for i, p in enumerate(self.pack_order)}
         for pack in sorted({a.pack for _s, a in res}, key=lambda p: rank.get(p, 99)):
             mine = [(s, a) for s, a in res if a.pack == pack]
-            if not self.loose(want, mine[0][1], kind):
+            if not self.loose(want, mine[0][1], kind) and id(mine[0][1]) not in unlike:
                 res = mine
                 break
         best = res[0][0]

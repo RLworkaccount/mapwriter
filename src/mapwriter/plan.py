@@ -143,7 +143,11 @@ def build(scene: Scene, index: Index) -> Plan:
         as a booth), so the user can check it or name a file."""
         if a is not None and want not in loose_told and index.loose(want, a, kind):
             loose_told.add(want)
-            warn(f"No close match for '{want}'; using {a.name}, found through a similar word.")
+            if index.by_look(want, a, kind):
+                warn(f"No file is named for '{want}'; using {a.name}, which looks like the "
+                     f"{a.guessed[0]} files. Check it, or add the word in tags.yaml.")
+            else:
+                warn(f"No close match for '{want}'; using {a.name}, found through a similar word.")
 
     # ---------- floors ----------
     def floor_asset(want):

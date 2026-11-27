@@ -7,7 +7,7 @@ The aim: a map studio you talk to. Describe a place, pick from a few layouts, ed
 | **v0.1** | Foundations (done) | Asset index with FA and generic naming, scene files, checks, sketch, painter with day and night lighting, GM key, check image, `.dd2vtt` export, starter art, tests |
 | **v0.2** | Outdoors (in progress) | Areas with soft edges, paths along a line, water with banks, scatter rules (trees, rocks, flowers, clutter by density), 2-Minute Tabletop adapter, market and garden scenes |
 | **v0.3** | Talk to it (in progress) | Templates (tavern, shop, house, market square, clearing) with three layouts to choose from, `describe` and `edit` briefs for the AI assistant you already use (no API key), `apply` to check and sketch the replies |
-| v0.4 | Any pack | Picture-based tagging for packs with vague names, style matching so mixed packs look consistent, an asset browser page |
+| **v0.4** | Any pack (in progress) | Picture-based tagging for packs with vague names, style matching so mixed packs look consistent, an asset browser page |
 | v0.5 | Whole places | Generators for buildings with sensible room layouts, multi-storey houses with aligned stairs, dungeons, caves, villages |
 | v0.6 | Ready to play | Full Foundry scenes: levels, map notes linked to journal entries, ambient sounds, starting tokens; story-aware GM keys made from an adventure document |
 | v0.7 | Everywhere | Local web editor with drag and drop, MCP server so any assistant can drive MapWriter, Dungeondraft export, Owlbear Rodeo and print-ready PDF |
@@ -43,6 +43,18 @@ v0.3 cuts that to:
 Also in v0.3 (26 Nov 2026): per-room and per-wall art (`walls:` on a room, `style:` on a free wall), glass, fence and railing walls that block movement but not sight or light, hedge walls drawn a square thick that block sight in Foundry, and free walls given as a run of `points`.
 
 Later in v0.3 or after: more templates (temple, guard post, cave mouth, ship deck), a template-aware `describe` that fills a template's options from the description, and an MCP server so assistants call MapWriter directly (v0.7).
+
+## v0.4 plan: Any pack
+
+The long view: point MapWriter at any folder of battlemap art, however it is named, and it understands it. It knows what each picture is, how big it really is, which artist's style it is in, and which pieces from different packs sit well together, so a map mixing three packs looks like one artist drew it. You browse and fix your whole library on one page, and MapWriter learns from your fixes. All of it runs on your own computer from the pixels, with no AI service and no key. An optional small offline model could come later for packs that defeat plain measurements, but only if the measurements fall short.
+
+v0.4 cuts that to three pull requests:
+
+1. **Picture facts and picking by them** (this PR): `mapwriter look` measures every picture (fill, solidity, colours, black ink, brightness, colour strength, soft shadow, seamless tiling, a fingerprint). Picking drops art that looks unlike the files named for the thing (no handcart for `apple`), reads colours from the picture, gives vague file names a guessed word from their look-alikes, and treats seamless pictures as floors. `pack-check` reports all of this for a new pack.
+2. **Style matching**: a style profile for each pack (ink, colour strength, brightness, shadow, resolution). When several packs could supply a piece, the one closest to the map's main style wins, and an optional `match_style: true` gently grades mixed-in art (colour strength, brightness, shadow) towards the main pack at paint time.
+3. **Asset browser page**: `mapwriter browse` writes a local HTML page of thumbnails (kept on your computer, never uploaded) to search by words, kind, pack and colour, see look-alikes and what a word would pick, and mark corrections that save as a `tags.yaml`.
+
+Later: real visible size from the drawn part (a 1x1 file with a tiny cup in it), near-copy grouping so scatter varies more, learning from your corrections, and the optional offline model.
 
 ## Known gaps in v0.1
 

@@ -20,6 +20,7 @@ src/mapwriter/
   assets/naming.py   file path -> words, footprint (WxH), kind
   assets/vocab.py    synonyms, light-source and rug words
   assets/index.py    Asset, Index (scan, save/load, search, pick, tags.yaml)
+  assets/look.py     picture facts from pixels (fill, colours, ink, seamless tiles, likeness); no model, no network
   assets/packcheck.py  pack-check: guess px per square, flag vague names, write mapwriter-pack.yaml
   scene.py           YAML -> Scene dataclasses, with friendly SceneError messages
   geometry.py        merge walls, cut openings, reachability flood fill, outdoor Regions (rough outlines, path strips)

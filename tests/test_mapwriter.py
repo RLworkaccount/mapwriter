@@ -718,3 +718,140 @@ def test_overlap_ok_silences_overlap_warning(starter):
     assert warnings({})
     assert not warnings({"overlap": "ok"})
     assert not warnings({"layer": 2})
+
+
+# ------------------------------------------------------------------ v0.4: picking by the pictures
+def _pack(root, files):
+    """Draw simple test pictures: name -> (size in px, function drawing on an RGBA image)."""
+    from PIL import Image, ImageDraw
+    for rel, (size, draw) in files.items():
+        p = Path(root) / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        im = Image.new("RGBA", size, (0, 0, 0, 0))
+        draw(ImageDraw.Draw(im), im)
+        im.save(p)
+    return str(root)
+
+
+def _blob(colour, r=0.35):
+    def draw(d, im):
+        w, h = im.size
+        d.ellipse([w * (0.5 - r), h * (0.5 - r), w * (0.5 + r), h * (0.5 + r)], fill=colour)
+    return draw
+
+
+def _cart(d, im):
+    w, h = im.size
+    d.rectangle([w * 0.05, h * 0.1, w * 0.95, h * 0.9], fill=(120, 80, 45))
+    for i in range(4):
+        d.ellipse([w * (0.2 + 0.15 * i), h * 0.4, w * (0.26 + 0.15 * i), h * 0.5], fill=(200, 30, 30))
+
+
+def _noise(d, im):
+    import random
+    rnd = random.Random(3)
+    px = im.load()
+    for y in range(im.height):
+        for x in range(im.width):
+            g = rnd.randint(70, 150)
+            px[x, y] = (g // 2, g, g // 3, 255)
+
+
+def _index(*folders):
+    idx = Index.build(list(folders))
+    idx.add_looks(workers=2)
+    return idx
+
+
+def test_look_measures_shape_colour_and_tiles(tmp_path):
+    from mapwriter.assets.look import look_at
+    root = _pack(tmp_path, {"a/Apple_Red_1x1.png": ((200, 200), _blob((200, 30, 30))),
+                            "a/Grass_01.png": ((400, 400), _noise)})
+    apple = look_at(str(tmp_path / "a/Apple_Red_1x1.png"))
+    assert apple["colours"] == ["red"] and 0.3 < apple["fill"] < 0.5 and not apple["tile"]
+    grass = look_at(str(tmp_path / "a/Grass_01.png"))
+    assert grass["fill"] == 1.0 and grass["tile"] and "green" in grass["colours"]
+    assert len(apple["sig"]) == len(grass["sig"]) and apple["at"]
+
+
+def test_handcart_named_for_apples_loses_to_real_apples(tmp_path):
+    big = _pack(tmp_path / "Big", {"Props/Handcart_Apples_3x2.png": ((600, 400), _cart)})
+    small = _pack(tmp_path / "Fill", {"Food/Apple_Red_1x1.png": ((200, 200), _blob((200, 30, 30))),
+                                      "Food/Apple_Red_B_1x1.png": ((200, 200), _blob((180, 40, 35), 0.3)),
+                                      "Food/Apple_Pile_1x1.png": ((200, 200), _blob((190, 35, 40), 0.4))})
+    words_only = Index.build([big, small])
+    assert words_only.pick("apple").name.startswith("Handcart")      # the first pack wins on its name alone
+    idx = _index(big, small)
+    assert idx.pick("apple").name.startswith("Apple")
+    assert idx.pick("handcart").name.startswith("Handcart")          # still found when asked for
+
+
+def test_colour_words_come_from_the_picture(tmp_path):
+    root = _pack(tmp_path, {"f/Apple_A_1x1.png": ((200, 200), _blob((200, 30, 30))),
+                            "f/Apple_B_1x1.png": ((200, 200), _blob((60, 170, 50))),
+                            "t/Tree_Oak_A_2x2.png": ((400, 400), _blob((200, 110, 30), 0.45)),
+                            "t/Tree_Oak_B_2x2.png": ((400, 400), _blob((60, 130, 50), 0.45))})
+    idx = _index(root)
+    assert idx.pick("green apple").name == "Apple_B_1x1.png"
+    assert idx.pick("red apple").name == "Apple_A_1x1.png"
+    assert idx.pick("tree").name == "Tree_Oak_B_2x2.png"            # a plain tree is a green one
+    assert idx.pick("orange tree").name == "Tree_Oak_A_2x2.png"
+
+
+def test_vague_names_get_a_word_from_look_alikes_and_seamless_props_become_floors(tmp_path):
+    files = {f"p/Barrel_{i}_1x1.png": ((200, 200), _blob((125 + 5 * i, 82, 45), 0.4)) for i in range(3)}
+    files.update({f"p/Rock_{i}_1x1.png": ((200, 200), _blob((128 + 4 * i, 126, 122), 0.3)) for i in range(3)})
+    files["p/IMG_0042.png"] = ((200, 200), _blob((131, 128, 124), 0.32))
+    files["p/Meadow_01.png"] = ((400, 400), _noise)
+    idx = _index(_pack(tmp_path, files))
+    vague = idx.get("IMG_0042.png")
+    assert vague.guessed == ["rock"]
+    a = idx.pick("rock", seed=1)
+    assert a is not None
+    hits = [x.name for _s, x in idx.search("rock", limit=None)]
+    assert hits[-1] == "IMG_0042.png"                               # named rocks come first
+    assert idx.get("Meadow_01.png").kind == "floor"
+    plan = build(parse({"name": "s", "grid": {"width": 6, "height": 6},
+                        "props": [{"want": "rock", "file": "IMG_0042.png", "at": [1, 1]}]}), idx)
+    assert plan.props[0].asset is vague
+
+
+def test_guessed_word_alone_warns_in_plan(tmp_path):
+    files = {f"p/Rock_{i}_1x1.png": ((200, 200), _blob((128 + 4 * i, 126, 122), 0.3)) for i in range(3)}
+    files["q/IMG_7.png"] = ((200, 200), _blob((130, 127, 123), 0.31))
+    root = _pack(tmp_path, files)
+    idx = _index(root)
+    idx.assets = [a for a in idx.assets if a.name == "IMG_7.png"]
+    idx._reindex()
+    plan = build(parse({"name": "s", "grid": {"width": 6, "height": 6},
+                        "props": [{"want": "rock", "at": [1, 1]}]}), idx)
+    assert plan.props[0].asset.name == "IMG_7.png"
+    assert any("looks like the rock files" in w for w in plan.warnings)
+
+
+def test_looks_survive_save_and_load(tmp_path):
+    root = _pack(tmp_path / "pk", {"a/Apple_Red_1x1.png": ((200, 200), _blob((200, 30, 30)))})
+    idx = _index(root)
+    idx.save(tmp_path / "i.json")
+    back = Index.load(tmp_path / "i.json")
+    assert back.assets[0].look["colours"] == ["red"]
+    from mapwriter.assets.look import look_all
+    assert look_all(back.assets) == 0                                # nothing changed, nothing re-read
+
+
+def test_look_and_like_commands_and_pack_check(tmp_path, capsys):
+    from mapwriter.cli import main
+    from mapwriter.assets.packcheck import check_pack
+    files = {f"p/Rock_{i}_1x1.png": ((200, 200), _blob((128 + 4 * i, 126, 122), 0.3)) for i in range(3)}
+    files["p/IMG_9.png"] = ((200, 200), _blob((130, 127, 123), 0.31))
+    root = _pack(tmp_path / "pk", files)
+    ix = str(tmp_path / "i.json")
+    main(["index", root, "-o", ix])
+    main(["look", "-i", ix, "--suggest", str(tmp_path / "s.yaml")])
+    assert '"p/IMG_9.png": [rock]' in (tmp_path / "s.yaml").read_text()
+    main(["search", "Rock_0_1x1", "--like", "-i", ix])
+    out = capsys.readouterr().out
+    assert "IMG_9.png" in out and "grey" in out
+    r = check_pack(root, write=True)
+    assert ("p/IMG_9.png", "rock") in r["guessed"] and r["style"]["ink"] < 0.1
+    assert "'IMG_9.png': [rock]" in (Path(root) / "mapwriter-pack.yaml").read_text()

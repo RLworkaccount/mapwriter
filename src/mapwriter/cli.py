@@ -3,6 +3,7 @@
     mapwriter starter-pack OUT_DIR          draw the free starter pack
     mapwriter pack-check FOLDER --write     look over a new pack, write mapwriter-pack.yaml
     mapwriter index FOLDER... -o index.json scan asset folders
+    mapwriter look -i index.json            measure each picture, so picking goes by the art too
     mapwriter search "round table"          find assets by words
     mapwriter check scene.yaml              list problems with a scene
     mapwriter sketch scene.yaml             quick block plan (PNG)
@@ -50,20 +51,87 @@ def cmd_starter(args):
 def cmd_index(args):
     from .assets.index import Index
     idx = Index.build(args.folders, read_sizes=not args.fast)
+    if os.path.exists(args.output):
+        # Keep pictures already measured, so re-indexing only looks at new or changed files.
+        try:
+            old = {a.id: a for a in Index.load(args.output).assets}
+        except Exception:
+            old = {}
+        for a in idx.assets:
+            o = old.get(a.id)
+            if o is not None and o.look:
+                a.look = o.look
+    if args.look:
+        _say_looks(idx.add_looks(workers=args.workers, progress=_progress), None)
     idx.save(args.output)
     kinds = ", ".join(f"{v} {k}" for k, v in idx.kinds().items())
     print(f"Indexed {len(idx.assets)} assets ({kinds}) -> {args.output}")
+    if not args.look:
+        print(f"Tip: mapwriter look -i {args.output} measures each picture, so picking can go by what the art looks like.")
+
+
+def _progress(done, total):
+    print(f"  looked at {done} of {total}...", file=sys.stderr)
+
+
+def _say_looks(r: dict, suggest_path):
+    print(f"Looked at {r['measured']} picture(s); {r['looked']} in the index have been measured.")
+    if r["floors"]:
+        print(f"{len(r['floors'])} seamless picture(s) filed as props are now floor textures, for example:")
+        for a in r["floors"][:5]:
+            print(f"  - {a.id}")
+    if r["guessed"]:
+        print(f"Guessed a word for {len(r['guessed'])} file(s) with vague names, from the files they look like:")
+        for a, word, d in r["guessed"][:12]:
+            print(f"  - {a.id}: {word}")
+        if len(r["guessed"]) > 12:
+            print(f"  ... and {len(r['guessed']) - 12} more")
+        if suggest_path:
+            lines = ["# Words MapWriter guessed from the pictures. Check them, fix any that are wrong,",
+                     "# then use this as your tags.yaml (or copy lines into it).", ""]
+            for a, word, d in r["guessed"]:
+                lines.append(f"{yaml_key(a.rel)}: [{word}]        # looks like the {word} files")
+            Path(suggest_path).write_text("\n".join(lines) + "\n", encoding="utf-8")
+            print(f"Wrote the guesses to {suggest_path} to check.")
+
+
+def yaml_key(text: str) -> str:
+    import json
+    return json.dumps(text)
+
+
+def cmd_look(args):
+    from .assets.index import Index
+    paths = args.index or [DEFAULT_INDEX]
+    for p in paths:
+        if not os.path.exists(p):
+            sys.exit(f"No asset index at {p}. Make one first: mapwriter index <asset folder> -o {p}")
+    for p in paths:
+        idx = Index.load(p)
+        r = idx.add_looks(workers=args.workers, force=args.force, progress=_progress)
+        idx.save(p)
+        print(f"{p}:")
+        _say_looks(r, args.suggest)
 
 
 def cmd_pack_check(args):
     from .assets.packcheck import check_pack
-    r = check_pack(args.folder, write=args.write, credit=args.credit)
+    r = check_pack(args.folder, write=args.write, credit=args.credit, look=not args.no_look)
     print(f"{r['pack']}: {r['files']} images ({', '.join(f'{v} {k}' for k, v in sorted(r['kinds'].items()))})")
     print(f"Pixels per square: {r['ppsq'] or 'unknown'} ({r['why']})")
+    if r["style"]:
+        st = r["style"]
+        print(f"Style: black ink {st['ink']:.0%}, colour strength {st['sat']:.0%}, brightness {st['bright']:.0%}, "
+              f"soft shadow {st['soft']:.0%} (props on average)")
+    if r["floors"]:
+        print(f"{len(r['floors'])} seamless picture(s) outside a textures folder will be used as floors, for example:")
+        for v in r["floors"][:5]:
+            print(f"  - {v}")
     if r["vague"]:
         print(f"{len(r['vague'])} file(s) with names that say too little; give them words in tags.yaml:")
+        guesses = dict(r["guessed"])
         for v in r["vague"]:
-            print(f"  - {v}")
+            print(f"  - {v}" + (f"  (looks like: {guesses[v]})" if v in guesses else ""))
     if r["manifest"]:
         print(f"Wrote {r['manifest']}. Check it, then run: mapwriter index \"{args.folder}\"")
     elif args.write:
@@ -74,13 +142,23 @@ def cmd_search(args):
     idx = _load(args)
     kind = None if args.kind == "any" else args.kind
     size = tuple(map(float, args.size.lower().split("x"))) if args.size else None
-    res = idx.search(args.words, kind, size, limit=args.limit)
+    if args.like:
+        base = idx.get(args.words)
+        if base is None:
+            sys.exit(f"No asset file called '{args.words}'.")
+        if not base.look:
+            sys.exit(f"{base.name} has not been measured yet. Run: mapwriter look")
+        res = idx.look_alikes(base, limit=args.limit, kind=None if args.kind in ("prop", "any") else kind)
+    else:
+        res = idx.search(args.words, kind, size, limit=args.limit)
     if not res:
         print(f"Nothing matches '{args.words}' (kind: {args.kind}).")
         return
     for s, a in res:
         fp = "x".join(map(str, a.footprint)) if a.footprint else "?"
-        print(f"{s:5.1f}  {fp:>5}  {a.kind:7} {a.id}")
+        seen = ",".join(a.look.get("colours", [])) if a.look else ""
+        guess = f"  (looks like: {', '.join(a.guessed)})" if a.guessed else ""
+        print(f"{s:5.1f}  {fp:>5}  {a.kind:7} {seen:12} {a.id}{guess}")
 
 
 def _plan(args):
@@ -254,16 +332,27 @@ def main(argv=None):
     p = sub.add_parser("index", help="scan asset folders into an index file")
     p.add_argument("folders", nargs="+"); p.add_argument("-o", "--output", default=DEFAULT_INDEX)
     p.add_argument("--fast", action="store_true", help="skip reading image sizes")
+    p.add_argument("--look", action="store_true", help="also measure each picture (same as running mapwriter look after)")
+    p.add_argument("--workers", type=int, default=8, help="pictures to read at once")
     p.set_defaults(fn=cmd_index)
+
+    p = sub.add_parser("look", help="measure each picture in an index: shape, colours, style, seamless tiles")
+    p.add_argument("-i", "--index", action="append", help=f"asset index file to update (default: {DEFAULT_INDEX})")
+    p.add_argument("--workers", type=int, default=8, help="pictures to read at once")
+    p.add_argument("--force", action="store_true", help="measure every picture again, not only new or changed ones")
+    p.add_argument("--suggest", metavar="FILE", help="write the words guessed for vague file names to a tags.yaml to check")
+    p.set_defaults(fn=cmd_look)
 
     p = sub.add_parser("pack-check", help="look over a new asset pack and guess its settings")
     p.add_argument("folder"); p.add_argument("-w", "--write", action="store_true", help="write a starter mapwriter-pack.yaml")
     p.add_argument("--credit", help="credit line to put in the pack's yaml, e.g. \"2-Minute Tabletop, CC BY-NC 4.0\"")
+    p.add_argument("--no-look", action="store_true", help="skip measuring the pictures (faster on a huge pack)")
     p.set_defaults(fn=cmd_pack_check)
 
     p = sub.add_parser("search", help="find assets by words"); p.add_argument("words")
     p.add_argument("-k", "--kind", default="prop", choices=["prop", "floor", "wall", "door", "window", "overlay", "roof", "effect", "any"])
     p.add_argument("-s", "--size", help="wanted footprint, e.g. 2x1"); p.add_argument("-n", "--limit", type=int, default=12)
+    p.add_argument("--like", action="store_true", help="treat WORDS as a file name and list art that looks like it")
     _index_args(p); p.set_defaults(fn=cmd_search)
 
     p = sub.add_parser("check", help="check a scene file for problems"); p.add_argument("scene")
