@@ -174,8 +174,11 @@ props:
 | `light` | `false` to stop a candle or lantern lighting itself, or `{ radius, colour, intensity }` |
 | `vary` | `true` to pick different art for each copy |
 | `layer` | Draw order: 0 rugs, 1 furniture, 2 small items on top. Worked out for you if left out |
-| `scale`, `flip`, `shadow` | Fine adjustments |
+| `scale`, `flip`, `shadow` | Fine adjustments. A `scale` below 1 with no `size` also means a small thing: 1x1 art is preferred, so `apple` gets an apple rather than a handcart of apples |
 | `top` | `false` to leave off the pack's matching top piece (see below) |
+| `overlap` | `ok` for pieces built to sit together, such as a counter in front of a tent or an awning over a counter: no overlap warning for them |
+
+Furniture placed with `at` that covers squares another piece already covers gets a warning, since it is usually a mistake. Small items (layer 2) never warn, and nor do pieces marked `overlap: ok`.
 
 Words that match a floor texture but no prop (for example `red rug`) are drawn as a rug of that texture, cut to `size`.
 

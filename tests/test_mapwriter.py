@@ -665,3 +665,44 @@ def test_wall_look_errors():
         parse({**base, "walls": [{"from": [0, 0], "to": [2, 0], "thickness": "thick"}]})
     with pytest.raises(SceneError):
         parse({**base, "rooms": [{"name": "r", "box": [0, 0, 3, 3], "see_through": "yes"}]})
+
+
+# ------------------------------------------------------------------ fixes from map-making sessions
+def test_small_scale_prefers_single_square_art():
+    names = ["Props/Carts/Handcart_Apples_3x2.webp", "Food/Fruit/Apple_Red_1x1.webp",
+             "Market/Stalls/Stall_Bread_3x2.webp", "Food/Bread/Bread_Loaf_1x1.webp"]
+    idx = Index([describe(n, "FA", "/fa") for n in names])
+    assert idx.pick("apple", small=True).footprint == [1, 1]
+    assert idx.pick("bread", small=True).footprint == [1, 1]
+    sc = parse({"name": "s", "grid": {"width": 8, "height": 8},
+                "props": [{"want": "apple", "at": [1, 1], "scale": 0.5}, {"want": "bread", "at": [3, 3], "scale": 0.6}]})
+    plan = build(sc, idx)
+    assert all(pl.asset.footprint == [1, 1] for pl in plan.props)
+
+
+def test_small_scale_keeps_big_art_when_no_small_match():
+    idx = Index([describe("Props/Carts/Handcart_Apples_3x2.webp", "FA", "/fa")])
+    assert idx.pick("apple", small=True).footprint == [3, 2]
+
+
+def test_roof_textures_work_as_floors():
+    names = ["Textures/Roof_Thatch_A.webp", "Textures/Wooden_Flooring_Oak.webp"]
+    idx = Index([describe(n, "FA", "/fa") for n in names])
+    assert idx.assets[0].kind == "roof"
+    for want in ("thatch roof", "thatch"):
+        sc = parse({"name": "r", "grid": {"width": 6, "height": 6},
+                    "rooms": [{"name": "loft", "box": [1, 1, 4, 4], "floor": want, "walls": "none"}]})
+        plan = build(sc, idx)
+        loft = next(f for f in plan.floors if f.name == "loft")
+        assert loft.asset is not None and "Roof_Thatch" in loft.asset.rel, want
+        assert not any(f"'{want}'" in w for w in plan.warnings), plan.warnings
+
+
+def test_overlap_ok_silences_overlap_warning(starter):
+    def warnings(extra):
+        sc = parse({"name": "o", "grid": {"width": 10, "height": 8},
+                    "props": [{"want": "market stall", "at": [2, 2]}, dict({"want": "counter", "at": [2, 3], "size": [3, 1]}, **extra)]})
+        return [w for w in build(sc, starter).warnings if "overlaps" in w]
+    assert warnings({})
+    assert not warnings({"overlap": "ok"})
+    assert not warnings({"layer": 2})

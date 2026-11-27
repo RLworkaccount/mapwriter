@@ -149,7 +149,12 @@ def build(scene: Scene, index: Index) -> Plan:
     def floor_asset(want):
         if not want:
             return None
-        a = index.get(want) or index.pick(want, "floor", seed=seed)
+        a = index.get(want)
+        if a is None:
+            # Roof textures (Roof_Thatch_*) index as kind roof. Asking for 'roof' words looks
+            # there first; otherwise they are a fallback when no floor texture matches.
+            order = ("roof", "floor") if "roof" in naming.words(want) else ("floor", "roof")
+            a = index.pick(want, order[0], seed=seed) or index.pick(want, order[1], seed=seed)
         if a is None:
             warn(f"No floor texture matches '{want}'; using a plain colour.")
         return a
@@ -244,6 +249,7 @@ def build(scene: Scene, index: Index) -> Plan:
 
     # ---------- props ----------
     occupied: set[tuple[int, int]] = set()
+    overlap_ok: set[tuple[int, int]] = set()       # squares of pieces marked overlap: ok
     door_squares: set[tuple[int, int]] = set()
     for o, _ in plan.openings:
         if o.kind == "window":
@@ -272,7 +278,11 @@ def build(scene: Scene, index: Index) -> Plan:
             return a
         key = p.want if not p.vary else f"{p.want}#{i}"
         if key not in chosen:
-            a = index.pick(p.want, "prop", p.size, seed=seed + (i if p.vary else 0), family_seed=seed if p.vary else None)
+            # A prop drawn smaller than its art with no size given is a small thing (an apple, a
+            # loaf): prefer 1x1 art, so the word doesn't pull in a handcart or stall full of them.
+            small = p.size is None and p.scale < 1
+            a = index.pick(p.want, "prop", p.size, seed=seed + (i if p.vary else 0), family_seed=seed if p.vary else None,
+                           small=small)
             if a is None:
                 # rugs, mats and similar sometimes live with floor textures
                 a = index.pick(p.want, "floor", seed=seed)
@@ -311,10 +321,13 @@ def build(scene: Scene, index: Index) -> Plan:
             pl = Placed(name, a, box, rot, p.label, _layer(p, a, (x1 - x0, y1 - y0)), p.scale, p.shadow, p.flip, fit_rot)
             if pl.layer >= 1:
                 sq = squares(box)
-                if pl.layer == 1 and sq & occupied and p.at is not None:
+                # overlap: ok marks pieces built to sit together (a counter in front of a tent).
+                if pl.layer == 1 and p.at is not None and not p.overlap and sq & (occupied - overlap_ok):
                     warn(f"'{name}' at {box[:2]} overlaps another piece of furniture.")
                 if pl.layer == 1:
                     occupied |= sq
+                    if p.overlap:
+                        overlap_ok |= sq
             plan.props.append(pl)
             # Base pieces with a separate top (well roofs, glass display tops) get the top too.
             top = index.top_piece(a, seed + bi) if (a is not None and p.top) else None
