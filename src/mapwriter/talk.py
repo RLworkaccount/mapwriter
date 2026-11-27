@@ -45,9 +45,9 @@ rooms:   - { name, box: [x0, y0, x1, y1] or shape: [[x, y], ...] (straight edges
 areas:   - { name, box/shape/circle: [x, y, r], floor: words, rough: 0.3, soft: 0.3, smooth: false }
 paths:   - { name, points: [[x, y], ...], width: 2, floor: dirt path, rough: 0.25, curve: true }
 water:   - { name, circle/box/shape (a pond) or points + width (a river), bank: { floor: mud, width: 0.6 } }
-props:   - { want: words, at: [x, y] or centre: [x, y], size: [w, h], rot: 0/90/180/270 (clockwise, 0 = back to the north),
+props:   - { want: words, at: [x, y] or centre: [x, y], size: [w, h], rot: 0/90/180/270 (clockwise, 0 = back to the north; leave it out on seats to face the nearest table),
              label: text }    or   { want: words, in: Room name, along: north/south/east/west, count: 2 }
-scatter: - { want: oak tree, in: map/area/room name, count: 6 or density: 0.05 (per square), cluster: 3, spread: 2, gap: 0.1,
+scatter: - { want: oak tree, in: map/area/room name, count: 6 or density: 0.05 (per square) or cover: 0.8 (share of ground, for beds), cluster: 3, spread: 2, gap: 0.1,
              avoid: [names] }
 lights:  - { at: [x, y], radius: 6, colour: warm/candle/fire/cool/moon/magic or #rrggbb }   (candles, lanterns, fires light themselves)
 notes:   - { at: [x, y], text: "for the GM key" }

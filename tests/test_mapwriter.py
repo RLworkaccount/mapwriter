@@ -936,6 +936,115 @@ def test_browser_page_and_its_tags_file_format(tmp_path):
     assert idx.pick("boulder").name == "IMG_9.png"
 
 
+# ------------------------------------------------------------------ outdoor placement fixes
+def test_chairs_without_rot_face_the_nearest_table(starter):
+    data = {"name": "Seats", "grid": {"width": 10, "height": 10}, "ground": "grass", "props": [
+        {"want": "round table", "at": [4, 4], "size": [2, 2]},
+        {"want": "chair", "at": [3, 4]}, {"want": "chair", "at": [6, 5]}, {"want": "chair", "at": [4, 3]},
+        {"want": "chair", "at": [5, 6]}, {"want": "chair", "at": [3, 3]},
+        {"want": "chair", "at": [8, 8]}, {"want": "chair", "at": [6, 4], "rot": 180}]}
+    chairs = [p for p in build(parse(data), starter).props if p.want == "chair"]
+    # rot 0 has the back to the north, so the seat faces south.
+    assert [c.rot for c in chairs] == [270, 90, 0, 180, 315, 0, 180]
+
+
+def test_rocks_in_water_lose_on_dry_ground_and_win_in_ponds():
+    names = ["Nature/Rocks/Rock_Gray_A_1x1.png", "Nature/Rocks/Rock_Gray_B_1x1.png",
+             "River and Water Assets/Rocks/Rock_River_Foam_A_1x1.png"]
+    idx = Index([describe(n, "P", "/p") for n in names])
+    assert {idx.pick("rock", seed=s).name for s in range(10)} <= {"Rock_Gray_A_1x1.png", "Rock_Gray_B_1x1.png"}
+    assert idx.pick("water rock").name == "Rock_River_Foam_A_1x1.png"
+    assert idx.pick("river rock").name == "Rock_River_Foam_A_1x1.png"
+    # A rock whose picture is mostly white (snow, chalk, foam) loses to a grey one when no colour is asked.
+    from mapwriter.assets.look import COLOURS
+    grey, white = (describe(n, "P", "/p") for n in ("Rock_A_1x1.png", "Rock_B_1x1.png"))
+    grey.look = {"sig": [100 if c == "grey" else 0 for c in COLOURS] + [40] * 6, "colours": ["grey"]}
+    white.look = {"sig": [70 if c == "white" else 30 if c == "grey" else 0 for c in COLOURS] + [40] * 6,
+                  "colours": ["white", "grey"]}
+    idx = Index([white, grey])
+    assert all(idx.pick("rock", seed=s) is grey for s in range(6))
+    assert idx.pick("white rock") is white
+
+
+def test_rocks_scattered_in_a_pond_ask_for_water_art(tmp_path):
+    from mapwriter.testart import build_pack
+    from PIL import Image
+    build_pack(tmp_path)
+    (tmp_path / "Water").mkdir()
+    Image.new("RGBA", (200, 200), (200, 220, 230, 255)).save(tmp_path / "Water" / "Rock_River_Foam_1x1.png")
+    idx = Index.build([str(tmp_path)])
+    data = {"name": "Pond", "grid": {"width": 12, "height": 10}, "ground": "grass",
+            "water": [{"name": "pond", "circle": [6, 5, 3], "bank": {"floor": "cobblestone", "width": 0.6}}],
+            "scatter": [{"want": "rock", "in": "pond", "count": 3}, {"want": "rock", "in": "pond bank", "count": 3}]}
+    plan = build(parse(data), idx)
+    rocks = [p for p in plan.props if p.want == "rock"]
+    assert len(rocks) == 6
+    assert all("River" in p.asset.name for p in rocks[:3])
+    assert not any("River" in p.asset.name for p in rocks[3:])
+
+
+def test_cover_fills_a_bed_evenly_with_small_art(starter):
+    data = {"name": "Bed", "grid": {"width": 10, "height": 8}, "ground": "grass",
+            "areas": [{"name": "bed", "box": [1, 1, 9, 7], "floor": "dirt"}],
+            "scatter": [{"want": "flowers", "in": "bed", "cover": 0.8, "gap": -0.2}]}
+    plan = build(parse(data), starter)
+    flowers = [p for p in plan.props if p.want == "flowers"]
+    # Starter flowers draw on about 60% of their square each way, so 0.8 of 48 squares needs about 100.
+    assert len(flowers) > 70 and not plan.warnings
+    # Even: every square of the bed has a flower within reach.
+    for x in range(1, 9):
+        for y in range(1, 7):
+            assert min((p.centre[0] - x - 0.5) ** 2 + (p.centre[1] - y - 0.5) ** 2 for p in flowers) < 0.8 ** 2
+    with pytest.raises(SceneError, match="cover"):
+        parse({**data, "scatter": [{"want": "flowers", "in": "bed", "cover": 3}]})
+
+
+def test_seats_sit_snug_and_centred_on_a_table_side(starter):
+    # The report's layout: chairs a square off a 2x2 round table and off its centre.
+    data = {"name": "Snug", "grid": {"width": 24, "height": 18}, "ground": "grass", "props": [
+        {"want": "round table", "at": [16, 11], "size": [2, 2]},
+        {"want": "chair", "at": [16, 10]}, {"want": "chair", "at": [17, 13], "rot": 180},
+        {"want": "round table", "at": [4, 4], "size": [3, 1]},
+        {"want": "chair", "at": [4, 5]}, {"want": "chair", "at": [5, 5]},
+        {"want": "chair", "at": [9, 9], "snug": False}]}
+    from mapwriter.plan import drawn
+    plan = build(parse(data), starter)
+    t1 = plan.props[0]
+    north, south = [p for p in plan.props[1:3]]
+    assert north.centre[0] == pytest.approx(17) and south.centre[0] == pytest.approx(17)   # centred on the side
+    edge = 11 + 2 * (1 - drawn(t1.asset)[1]) / 2                     # the table's drawn top edge
+    chair_drawn = 1 - (1 - max(drawn(north.asset))) / 2             # the chair's drawn lower edge
+    assert north.box[1] + chair_drawn == pytest.approx(edge - 0.05)  # touching, tucked in a little
+    pair = [p for p in plan.props if p.want == "chair" and 4.5 < p.centre[1] < 6.5]
+    assert sorted(round(p.centre[0], 2) for p in pair) == [4.75, 6.25]   # two seats share the side evenly
+    assert plan.props[-1].box == (9, 9, 10, 10)                       # snug: false stays put
+
+
+def test_cover_draws_tiny_sprigs_bigger_and_caps_the_count(tmp_path):
+    from PIL import Image, ImageDraw
+    (tmp_path / "Flora").mkdir()
+    for i in range(3):
+        im = Image.new("RGBA", (200, 200))
+        ImageDraw.Draw(im).ellipse([78, 78, 122, 122], fill=(40, 160, 150, 255))   # a sprig on ~22% of the width
+        im.save(tmp_path / "Flora" / f"Flower_Turquoise_A{i}_1x1.png")
+    idx = Index.build([str(tmp_path)])
+    data = {"name": "Bed", "grid": {"width": 10, "height": 8}, "ground": "grass",
+            "areas": [{"name": "bed", "box": [1, 1, 9, 7], "floor": "dirt"}],
+            "scatter": [{"want": "flowers", "in": "bed", "cover": 0.8, "gap": -0.1}]}
+    plan = build(parse(data), idx)
+    flowers = [p for p in plan.props if p.want == "flowers"]
+    assert 150 <= len(flowers) <= 6 * 48            # many sprigs, but at most six a square
+    assert all(1.4 < p.scale < 1.8 for p in flowers)   # drawn bigger so the bed reads
+
+
+def test_river_rocks_lose_to_plain_rocks_in_a_mixed_folder():
+    names = ["2MT/River and Water Assets/Assets/Rocks 1.png",
+             "FA/Woodlands/!Wilderness/Rocks/Rock_Grey_A1_1x1.webp",
+             "FA/Woodlands/!Wilderness/Rocks/Rock_Grey_A2_1x1.webp"]
+    idx = Index([describe(n, "Map art", "/m") for n in names])
+    assert all(idx.pick("rock", seed=s).name.startswith("Rock_Grey") for s in range(8))
+
+
 # ------------------------------------------------------------------ v0.4 fixes from the full-pack test
 def test_sub_packs_maps_and_demo_sheets(tmp_path):
     muted = lambda i: _blob((120 + 4 * i, 100, 80), 0.38)

@@ -10,7 +10,7 @@ import math
 import random
 from dataclasses import dataclass, field
 
-from .assets.index import Asset, Index
+from .assets.index import WET_WORDS, Asset, Index
 from .geometry import (Region, distance_to_segment, grown, path_strip, rough_outline, joint_shape, light_area, merge_walls, on_wall, reachable,
                        wall_junctions)
 from .assets import naming
@@ -337,6 +337,7 @@ def _build(scene: Scene, index: Index) -> Plan:
             chosen[key] = a
         return chosen[key]
 
+    seated: list[tuple[Placed, Prop, list]] = []      # placed props, for turning seats to tables
     for pi, p in enumerate(scene.props):
         name = p.want or p.file
         count = max(1, p.count)
@@ -374,10 +375,12 @@ def _build(scene: Scene, index: Index) -> Plan:
                     if p.overlap:
                         overlap_ok |= sq
             plan.props.append(pl)
+            seated.append((pl, p, [pl]))
             # Base pieces with a separate top (well roofs, glass display tops) get the top too.
             top = index.top_piece(a, seed + bi) if (a is not None and p.top) else None
             if top is not None:
                 plan.props.append(Placed(name, top, box, rot, None, max(3, pl.layer + 1), p.scale, False, p.flip, fit_rot, part="top"))
+                seated[-1][2].append(plan.props[-1])
             # automatic lights from candles, lanterns, fireplaces
             if a is not None and a.emits_light and p.light is not False:
                 r, c, inten = _auto_light(a)
@@ -388,6 +391,9 @@ def _build(scene: Scene, index: Index) -> Plan:
                         c = colour(p.light.get("colour", p.light.get("color")))
                 cx, cy = pl.centre
                 plan.lights.append(Light((cx, cy), r, c, inten, "both"))
+
+    _face_tables(seated)
+    _snug_seats(seated)
 
     # ---------- scatter ----------
     taken: list[tuple[float, float, float]] = []       # (x, y, radius) of scattered items so far
@@ -426,6 +432,108 @@ def _build(scene: Scene, index: Index) -> Plan:
     return plan
 
 
+SEAT_WORDS = {"chair", "armchair", "seat", "stool", "bench", "pew", "throne", "sofa", "couch"}
+TABLE_WORDS = {"table", "desk", "counter"}
+
+
+def _words_of(pl: Placed, p: Prop) -> set:
+    ws = set(naming.words(p.want)) if p.want else set()
+    if pl.asset is not None:
+        ws |= pl.asset.all_words
+    return ws
+
+
+def _face_tables(seated) -> None:
+    """Turn each seat that was given no rot to face the nearest table beside it, so chairs
+    sit round a table whichever way the pack draws them. rot 0 has the back to the north, so
+    the seat faces south; a seat between two sides of a table (at a corner) faces it on the
+    diagonal."""
+    tables = [pl.box for pl, p, _ in seated if _words_of(pl, p) & TABLE_WORDS and not _words_of(pl, p) & SEAT_WORDS]
+    if not tables:
+        return
+    for pl, p, parts in seated:
+        if p.turned or p.along or not (_words_of(pl, p) & SEAT_WORDS) or _words_of(pl, p) & TABLE_WORDS:
+            continue
+        x0, y0, x1, y1 = pl.box
+        if abs((x1 - x0) - (y1 - y0)) > 0.01:
+            continue                          # long seats (benches) keep the way they were set
+        cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+        best = None
+        for tx0, ty0, tx1, ty1 in tables:
+            nx, ny = min(max(cx, tx0), tx1), min(max(cy, ty0), ty1)
+            d = math.hypot(nx - cx, ny - cy)
+            if 0 < d <= 1.0 + 0.5 * (x1 - x0) and (best is None or d < best[0]):
+                best = (d, nx - cx, ny - cy)
+        if best is None:
+            continue
+        _, dx, dy = best
+        rot = math.degrees(math.atan2(-dx, dy)) % 360          # facing (0, 1) is rot 0
+        rot = (round(rot / 45) * 45) % 360
+        for part in parts:
+            part.rot = float(rot)
+
+
+def _snug_seats(seated) -> None:
+    """Seats along one side of a table are spread evenly along that side, centred on it, and
+    pulled in until the seat's drawn edge meets the table's drawn edge. Round table art often
+    draws well inside its box, and a chair set on the next square would leave grass between.
+    Seats at a corner, long seats and seats marked snug: false stay where they were put."""
+    tables = [(pl, p) for pl, p, _ in seated if _words_of(pl, p) & TABLE_WORDS and not _words_of(pl, p) & SEAT_WORDS]
+    if not tables:
+        return
+    sides: dict[tuple[int, str], list] = {}
+    for pl, p, parts in seated:
+        words = _words_of(pl, p)
+        if not p.snug or not (words & SEAT_WORDS) or words & TABLE_WORDS:
+            continue
+        x0, y0, x1, y1 = pl.box
+        if abs((x1 - x0) - (y1 - y0)) > 0.01:
+            continue
+        cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+        best = None
+        for ti, (tpl, _tp) in enumerate(tables):
+            tx0, ty0, tx1, ty1 = tpl.box
+            nx, ny = min(max(cx, tx0), tx1), min(max(cy, ty0), ty1)
+            d = math.hypot(nx - cx, ny - cy)
+            if 0 < d <= 1.0 + 0.5 * (x1 - x0) and (best is None or d < best[0]):
+                best = (d, ti, nx - cx, ny - cy)
+        if best is None or (abs(best[2]) > 1e-6 and abs(best[3]) > 1e-6):
+            continue                          # at a corner: leave it
+        _, ti, dx, dy = best
+        side = "west" if dx > 0 else "east" if dx < 0 else "north" if dy > 0 else "south"
+        sides.setdefault((ti, side), []).append((pl, parts))
+    for (ti, side), seats in sides.items():
+        tpl = tables[ti][0]
+        tx0, ty0, tx1, ty1 = tpl.box
+        tw, th = tx1 - tx0, ty1 - ty0
+        dw, dh = drawn(tpl.asset) if tpl.asset is not None else (1.0, 1.0)
+        dw, dh = dw * tpl.scale, dh * tpl.scale
+        # The table's drawn edges (art is drawn about the middle of its box).
+        ex0, ex1 = tx0 + tw * (1 - dw) / 2, tx1 - tw * (1 - dw) / 2
+        ey0, ey1 = ty0 + th * (1 - dh) / 2, ty1 - th * (1 - dh) / 2
+        along_x = side in ("north", "south")
+        seats.sort(key=lambda s: (s[0].box[0] if along_x else s[0].box[1]))
+        lo, hi = (tx0, tx1) if along_x else (ty0, ty1)
+        m = len(seats)
+        for j, (pl, parts) in enumerate(seats):
+            x0, y0, x1, y1 = pl.box
+            size = x1 - x0
+            sw, sh = drawn(pl.asset) if pl.asset is not None else (1.0, 1.0)
+            inset = size * (1 - max(sw, sh) * pl.scale) / 2 - 0.05   # tuck in a little
+            mid = lo + (j + 0.5) * (hi - lo) / m
+            if side == "north":
+                nx0, ny0 = mid - size / 2, ey0 - size + inset
+            elif side == "south":
+                nx0, ny0 = mid - size / 2, ey1 - inset
+            elif side == "west":
+                nx0, ny0 = ex0 - size + inset, mid - size / 2
+            else:
+                nx0, ny0 = ex1 - inset, mid - size / 2
+            box = (nx0, ny0, nx0 + size, ny0 + size)
+            for part in parts:
+                part.box = box
+
+
 def _light_area(scene: Scene, L: Light, blockers) -> list:
     """Where a light reaches, cast against the walls. A light sitting on a wall line
     (a sconce, a fireplace against the wall) is nudged into its room first, so it
@@ -440,6 +548,24 @@ def _light_area(scene: Scene, L: Light, blockers) -> list:
             x, y = x + 0.15 * (cx - x) / d, y + 0.15 * (cy - y) / d
     return light_area((x, y), blockers, L.radius)
 TALL_WORDS = {"tree", "oak", "pine", "willow", "canopy"}
+
+
+_DRAWN: dict[str, tuple[float, float]] = {}
+
+
+def drawn(a: Asset | None) -> tuple[float, float]:
+    """How much of its box an asset's picture draws on, across and down (0 to 1). Comes from
+    the measured look; unmeasured art is measured here once. A labelled box fills its box."""
+    if a is None:
+        return 1.0, 1.0
+    if a.path not in _DRAWN:
+        lk = a.look
+        if not lk or "box" not in lk:
+            from .assets.look import look_at
+            lk = look_at(a.path) or {}
+        bx = lk.get("box") or [0, 0, 1, 1]
+        _DRAWN[a.path] = (max(0.1, min(1.0, bx[2] - bx[0])), max(0.1, min(1.0, bx[3] - bx[1])))
+    return _DRAWN[a.path]
 
 
 def _region_named(plan: Plan, name: str):
@@ -491,33 +617,57 @@ def _scatter(plan: Plan, rule, si: int, index: Index, blocked_squares, taken, wa
 
     x0, y0, x1, y1 = region.bbox()
     x0, y0, x1, y1 = max(0, x0), max(0, y0), min(W, x1), min(H, y1)
+    # On a bank, items may lean out over their own water (rocks at the water's edge), so only
+    # their middle has to be on the bank.
+    shore = next((f.region for f in plan.floors if f.water and f"{f.name} bank".lower() == rule.within.lower()), None)
+    # Scattered in a pond or river: art drawn in water (rocks with foam round them) is right there.
+    in_water = any(f.water and f.region is region for f in plan.floors)
+    look_for = name if not in_water or set(naming.words(name)) & WET_WORDS else f"water {name}"
+
+    def choose(i):
+        a = index.pick(look_for, "prop", rule.size, seed=sc.seed + (i if rule.vary else 0), family_seed=sc.seed if rule.vary else None)
+        if a is None:
+            a = index.pick(look_for, "prop", rule.size, seed=sc.seed)
+        tell(name, a)
+        return a
+
+    boost = 1.0
     if rule.count is not None:
         n = max(0, rule.count)
     else:
         cells = sum(1 for i in range(int(x0 * 2), int(math.ceil(x1 * 2))) for j in range(int(y0 * 2), int(math.ceil(y1 * 2)))
                     if region.contains(i / 2 + 0.25, j / 2 + 0.25))
-        n = int(round(rule.density * cells / 4))
+        if rule.cover is not None:
+            # Enough copies to cover that share of the ground with what the art actually draws:
+            # small blooms in a big square need many more than a bush that fills its square.
+            a0 = choose(0)
+            fw, fh = rule.size or (tuple(a0.footprint) if a0 is not None and a0.footprint else (1, 1))
+            dw, dh = drawn(a0)
+            # Single sprigs (a flower drawn on a fifth of its square) are drawn a little bigger
+            # so a bed reads as flowers, and a square holds at most six.
+            boost = max(1.0, min(2.0, 0.35 / max(0.05, min(dw * fw, dh * fh))))
+            k = sum(rule.scale) / 2 * boost
+            each = max(0.05, fw * dw * fh * dh * k * k)
+            n = int(round(min(rule.cover / each, 6.0) * cells / 4))
+        else:
+            n = int(round(rule.density * cells / 4))
 
-    def choose(i):
-        a = index.pick(name, "prop", rule.size, seed=sc.seed + (i if rule.vary else 0), family_seed=sc.seed if rule.vary else None)
-        if a is None:
-            a = index.pick(name, "prop", rule.size, seed=sc.seed)
-        tell(name, a)
-        return a
-
-    def free(x, y, r):
+    def free(x, y, r, reach=None):
+        """Room for an item at (x, y): ``r`` is the drawn part, kept apart from other items;
+        ``reach`` is the whole box, kept off buildings, paths and furniture."""
+        reach = r if reach is None else reach
         if not (0 <= x <= W and 0 <= y <= H) or not region.contains(x, y):
             return False
         dirs = ((1, 0), (-1, 0), (0, 1), (0, -1), (0.7, 0.7), (-0.7, 0.7), (0.7, -0.7), (-0.7, -0.7))
-        edge = [(x, y)] + [(x + r * 0.7 * dx, y + r * 0.7 * dy) for dx, dy in dirs]
-        if any(g.contains(px, py) for g in avoid for px, py in edge):
+        edge = [(x, y)] + [(x + reach * 0.7 * dx, y + reach * 0.7 * dy) for dx, dy in dirs]
+        if any(g.contains(px, py) for g in avoid for px, py in (edge[:1] if g is shore else edge)):
             return False
-        rim = [(x + r * dx, y + r * dy) for dx, dy in dirs]
+        rim = [(x + reach * dx, y + reach * dy) for dx, dy in dirs]
         if any(g.contains(px, py) for g in solid for px, py in edge + rim):
             return False
         # Big pieces (tree canopies) keep their whole spread off furniture so it stays in view;
         # small ones (a pile of crates) may sit snug against it.
-        if any((int(px), int(py)) in blocked_squares for px, py in (edge if r > 0.75 else edge[:1])):
+        if any((int(px), int(py)) in blocked_squares for px, py in (edge if reach > 0.75 else edge[:1])):
             return False
         return all(math.hypot(x - tx, y - ty) >= r + tr + rule.gap for tx, ty, tr in taken)
 
@@ -534,32 +684,39 @@ def _scatter(plan: Plan, rule, si: int, index: Index, blocked_squares, taken, wa
             warn(f"scatter '{name}': no free spot in '{rule.within}'.")
             return []
 
-    out, art = [], None
+    out, art, mine = [], None, []
     for i in range(n):
         a = choose(i) if (rule.vary or art is None) else art
         art = art or a
-        k = rnd.uniform(*rule.scale)
-        placed = False
+        k = rnd.uniform(*rule.scale) * boost
+        spots = []
         for _size_try in range(4):
             fw, fh = rule.size or (tuple(a.footprint) if a is not None and a.footprint else (1, 1))
-            r = 0.5 * min(fw, fh) * k * 0.9
+            reach = 0.5 * min(fw, fh) * k * 0.9
+            dw, dh = drawn(a)
+            r = 0.5 * min(fw * dw, fh * dh) * k * 0.9          # spaced by the drawn part, not the whole square
             for t in range(80):
                 if centres:
                     cx, cy = centres[(i + t // 12) % len(centres)]     # a full clump hands on to the next
                     x, y = rnd.gauss(cx, rule.spread / 2), rnd.gauss(cy, rule.spread / 2)
                 else:
                     x, y = rnd.uniform(x0, x1), rnd.uniform(y0, y1)
-                if free(x, y, r):
-                    placed = True
-                    break
-            if placed or rule.size or a is None:
+                if free(x, y, r, reach):
+                    spots.append((x, y))
+                    # Spread out evenly: of a few free spots, take the one furthest from the rest,
+                    # so a bed fills without bare patches. Clumps take the first spot.
+                    if centres or len(spots) >= 6:
+                        break
+            if spots or rule.size or a is None:
                 break
             # No room for art this big: try the next size down from the same pack (a smaller tree).
-            a = index.smaller(name, a, "prop", seed=sc.seed + i)
+            a = index.smaller(look_for, a, "prop", seed=sc.seed + i)
             if a is None:
                 break
-        if not placed:
+        if not spots:
             continue
+        x, y = max(spots, key=lambda q: min((math.hypot(q[0] - tx, q[1] - ty) - tr for tx, ty, tr in mine), default=0))
+        mine.append((x, y, r))
         taken.append((x, y, r))
         rot = {"any": rnd.uniform(0, 360), "square": rnd.choice([0, 90, 180, 270]), "none": 0.0}[rule.turn]
         if a is not None:
