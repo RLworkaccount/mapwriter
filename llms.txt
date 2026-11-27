@@ -1,0 +1,33 @@
+# MapWriter
+
+> MapWriter is a free, open-source (MIT) battlemap generator for Foundry VTT and other virtual tabletops. A short YAML scene file describes rooms, doors, windows, furniture and lights in 5 ft grid squares. MapWriter matches the words to art in the user's own asset folders (Forgotten Adventures, 2-Minute Tabletop, or any folder of images), checks the layout, paints day and night map images, and writes a Universal VTT `.dd2vtt` file with walls, doors, windows and lights for Foundry's Universal Battlemap Importer. Python 3.10+, Pillow and PyYAML only.
+
+MapWriter is designed so an AI assistant can do the layout work: write the scene file from a plain description, run `mapwriter check` and `mapwriter sketch`, read the warnings, fix the layout, then run `mapwriter render`. It never copies, uploads or bundles asset packs; it reads them where they are. A free starter pack drawn in code is available with `mapwriter starter-pack <folder>`.
+
+Install: `pip install git+https://github.com/RLworkaccount/mapwriter`
+
+Typical commands:
+- `mapwriter starter-pack starter` draws the free starter art
+- `mapwriter index <asset folders...> -o mapwriter-index.json` indexes art by file and folder names
+- `mapwriter search "round table"` shows which art a word picks
+- `mapwriter check scene.yaml -v` lists warnings and the file chosen for every prop
+- `mapwriter sketch scene.yaml -o out` draws a block plan with grid numbers
+- `mapwriter render scene.yaml -o out` paints the maps and writes the `.dd2vtt` files
+
+Coordinates: x runs right, y runs down from the top-left corner. Doors and windows sit on grid lines. A prop's `at` is its top-left square; `rot` is clockwise.
+
+## Docs
+
+- [README](https://github.com/RLworkaccount/mapwriter/blob/main/README.md): what MapWriter does, install, quick start and a copyable prompt for AI assistants
+- [Scene format](https://github.com/RLworkaccount/mapwriter/blob/main/docs/scene-format.md): every field in a scene file
+- [Describing a map to an AI](https://github.com/RLworkaccount/mapwriter/blob/main/docs/describe-with-ai.md): the write, check, sketch, fix, render loop
+- [Asset packs](https://github.com/RLworkaccount/mapwriter/blob/main/docs/asset-packs.md): how packs are read, pack files and tag fixes
+
+## Examples
+
+- [Tavern](https://github.com/RLworkaccount/mapwriter/blob/main/examples/tavern.yaml): a village tavern with a common room, kitchen, store room and garden
+- [Chapel](https://github.com/RLworkaccount/mapwriter/blob/main/examples/chapel.yaml): a village chapel with a vestry, stair room and walled garden
+
+## Optional
+
+- [Roadmap](https://github.com/RLworkaccount/mapwriter/blob/main/ROADMAP.md): planned work, including outdoor scenes, a web editor and an MCP server (v0.7)
