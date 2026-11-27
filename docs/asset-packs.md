@@ -88,6 +88,20 @@ kinds:
   Grates/: overlay
 ```
 
+## The asset browser
+
+```bash
+mapwriter browse -o asset-browser
+```
+
+writes `asset-browser/index.html` and small thumbnails of your art. Open the page in any browser. It works offline and stays on your computer: nothing is uploaded, and the page reads your files only from your own disk. Don't put the folder anywhere public, since the thumbnails are copies of your packs' art.
+
+- Search by words, and filter by kind, pack, colour, or files with guessed words only.
+- Click a picture to see its words, footprint, colours, outline ink and brightness, its pack's style, and the art that looks most like it.
+- Correct a picture: add words or change its kind, then **Download tags.yaml**. Use the file with `-t tags.yaml` (or copy its lines into yours). Corrections are remembered in that browser until you clear them.
+
+Thumbnails are made once and only remade when a file changes. For a very large library, `--pack NAME` limits the page to one pack, and `--no-thumbs` shows the original files instead (no copies made, but the page is slower).
+
 ## Mixing packs
 
 Packs by different artists look different: one outlines everything in heavy black ink, another has soft colour and baked-in shadows. Once pictures are measured (`mapwriter look`), MapWriter keeps a style profile for each pack (black ink, colour strength, brightness, soft shadow) and `mapwriter look` prints them.

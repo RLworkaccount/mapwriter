@@ -11,3 +11,4 @@ mapwriter-index.json
 # Never commit third-party asset packs
 /assets/
 /packs/
+asset-browser/

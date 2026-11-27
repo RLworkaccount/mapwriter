@@ -44,6 +44,9 @@ mapwriter index "path/to/FA_Assets" starter -o mapwriter-index.json
 # 3. Optional: measure the pictures, so picking goes by what the art looks like too
 mapwriter look -i mapwriter-index.json
 
+# Look through your packs and fix any tags on a local page (asset-browser/index.html)
+mapwriter browse -o asset-browser
+
 # 4. Check, sketch and paint a scene
 mapwriter check examples/tavern.yaml
 mapwriter sketch examples/tavern.yaml -o out

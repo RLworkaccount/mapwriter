@@ -917,3 +917,20 @@ def test_grading_changes_colour_and_keeps_transparency(tmp_path):
     out = apply_grade(im, (0.7, 0.9))
     assert out.getchannel("A").tobytes() == im.getchannel("A").tobytes()
     assert measure(out)["sat"] < measure(im)["sat"] and measure(out)["bright"] < measure(im)["bright"]
+
+
+# ------------------------------------------------------------------ v0.4: asset browser
+def test_browser_page_and_its_tags_file_format(tmp_path):
+    import yaml as _yaml
+    from mapwriter.browse import write_browser
+    files = {f"p/Rock_{i}_1x1.png": ((200, 200), _blob((128 + 4 * i, 126, 122), 0.3)) for i in range(3)}
+    files["p/IMG_9.png"] = ((200, 200), _blob((130, 127, 123), 0.31))
+    idx = _index(_pack(tmp_path / "pk", files))
+    page = write_browser(idx, tmp_path / "br", workers=2)
+    html = page.read_text(encoding="utf-8")
+    assert "const ASSETS = [" in html and '"guessed":["rock"]' in html
+    assert len(list((tmp_path / "br" / "thumbs").glob("*.webp"))) == 4
+    # The page downloads corrections in this shape; tags.yaml must read it.
+    (tmp_path / "tags.yaml").write_text('"p/IMG_9.png": ["boulder", "stone"]\nkinds:\n  "p/IMG_9.png": prop\n')
+    idx.apply_tags(tmp_path / "tags.yaml")
+    assert idx.pick("boulder").name == "IMG_9.png"

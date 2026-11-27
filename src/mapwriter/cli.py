@@ -4,6 +4,7 @@
     mapwriter pack-check FOLDER --write     look over a new pack, write mapwriter-pack.yaml
     mapwriter index FOLDER... -o index.json scan asset folders
     mapwriter look -i index.json            measure each picture, so picking goes by the art too
+    mapwriter browse -o asset-browser       a local page to look through your packs and fix tags
     mapwriter search "round table"          find assets by words
     mapwriter check scene.yaml              list problems with a scene
     mapwriter sketch scene.yaml             quick block plan (PNG)
@@ -111,6 +112,16 @@ def _say_styles(idx):
 def yaml_key(text: str) -> str:
     import json
     return json.dumps(text)
+
+
+def cmd_browse(args):
+    from .browse import write_browser
+    idx = _load(args)
+    p = write_browser(idx, args.out, thumbs=not args.no_thumbs, workers=args.workers, packs=args.pack, progress=_progress)
+    measured = sum(1 for a in idx.assets if a.look)
+    print(f"Asset browser: {p} ({len(idx.assets)} pictures). Open it in your browser; it stays on this computer.")
+    if measured < len(idx.assets):
+        print("Tip: run mapwriter look first to add colours, look-alikes and guessed words to the page.")
 
 
 def cmd_look(args):
@@ -349,6 +360,13 @@ def main(argv=None):
     p.add_argument("--look", action="store_true", help="also measure each picture (same as running mapwriter look after)")
     p.add_argument("--workers", type=int, default=8, help="pictures to read at once")
     p.set_defaults(fn=cmd_index)
+
+    p = sub.add_parser("browse", help="write a local page for looking through your packs and correcting tags")
+    _index_args(p); p.add_argument("-o", "--out", default="asset-browser", help="folder for the page and thumbnails")
+    p.add_argument("--no-thumbs", action="store_true", help="show the original files instead of small copies (slower page)")
+    p.add_argument("--pack", action="append", help="only this pack; repeat for several")
+    p.add_argument("--workers", type=int, default=8, help="thumbnails to make at once")
+    p.set_defaults(fn=cmd_browse)
 
     p = sub.add_parser("look", help="measure each picture in an index: shape, colours, style, seamless tiles")
     p.add_argument("-i", "--index", action="append", help=f"asset index file to update (default: {DEFAULT_INDEX})")
