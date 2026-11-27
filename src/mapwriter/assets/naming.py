@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import re
 
-FOOTPRINT_RE = re.compile(r"(?:^|[_\-\s])(\d{1,2})x(\d{1,2})(?=$|[_\-\s.])", re.I)
+FOOTPRINT_RE = re.compile(r"(?:^|[_\-\s(])(\d{1,2})x(\d{1,2})(?=$|[_\-\s.)])", re.I)
 VARIANT_RE = re.compile(r"^(?:[a-z]{1,2}\d{0,2}|\d{1,3}|v\d+(?:\.\d+)*)$", re.I)
 CAMEL_RE = re.compile(r"(?<=[a-z])(?=[A-Z])")
 SPLIT_RE = re.compile(r"[\\/_\-\s.()\[\]!,]+")
@@ -18,7 +18,7 @@ IMAGE_EXTS = {".png", ".webp", ".jpg", ".jpeg"}
 
 # Words that are noise in folder names.
 STOP = {"assets", "asset", "webp", "png", "jpg", "pack", "core", "fa", "the", "and", "of",
-        "misc", "arranged", "base", "settlements", "settlement", "mapmaking", "v1", "free"}
+        "misc", "base", "settlements", "settlement", "mapmaking", "v1", "free", "dpi", "roll20", "vtt", "print"}
 
 # Kind rules: first match wins. Each rule is (kind, words that must appear).
 KIND_RULES = [
@@ -44,7 +44,7 @@ IRREGULAR = {"shelves": "shelf", "benches": "bench", "boxes": "box", "glasses": 
              "torches": "torch", "brushes": "brush", "dishes": "dish", "cases": "case",
              "leaves": "leaf", "knives": "knife", "wolves": "wolf", "mice": "mouse",
              "geese": "goose", "cacti": "cactus", "fungi": "fungus", "stairs": "stairs",
-             "glass": "glass", "moss": "moss", "grass": "grass", "dress": "dress"}
+             "glass": "glass", "christmas": "christmas", "moss": "moss", "grass": "grass", "dress": "dress"}
 
 
 def singular(w: str) -> str:

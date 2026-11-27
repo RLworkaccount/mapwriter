@@ -23,8 +23,9 @@ v0.2 cuts that to the parts every outdoor map needs, in this order. Each lands a
 2. **Paths along a line** (done): `paths:` with points, width, curves and wandering edges.
 3. **Water with banks** (done): ponds and rivers as areas or paths, a bank strip round them, deeper colour in the middle and a light shoreline.
 4. **Scatter rules with clustering** (first slice done): `scatter:` fills an area, a room or the whole map with trees, rocks, flowers or clutter by density or count, in clumps, keeping off paths, water and furniture. The same code gives "a pile of crates" in a room.
-5. **2-Minute Tabletop adapter** (done, to be tried on a real pack): `mapwriter pack-check` guesses any pack's pixels per square, flags vague names and writes its `mapwriter-pack.yaml`; a pack's `credit:` line is written next to every map that uses its art.
+5. **2-Minute Tabletop adapter** (done, tried on four free 2MT packs on 26 Nov 2026: DPI folders, sized textures and `Category - Item` names): `mapwriter pack-check` guesses any pack's pixels per square, flags vague names and writes its `mapwriter-pack.yaml`; a pack's `credit:` line is written next to every map that uses its art.
 6. **Outdoor starter art and test scenes** (done): rocks, bushes, flowers, water, a well and a cart, plus a market and a garden-party scene that render with the starter pack alone.
+7. **Tried on the full Forgotten Adventures Core pack** (done, 26 Nov 2026): outdoor words now find plain outdoor art (dirt for paths, green trees and bushes, whole crates), scatter keeps one family of art, canopies stay off buildings and furniture, and a fill-in pack supplies what the main pack lacks.
 
 Later: hills and cliffs, bridges and fords, sight-blocking trees, seasons.
 

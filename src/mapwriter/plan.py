@@ -117,6 +117,14 @@ def build(scene: Scene, index: Index) -> Plan:
     plan = Plan(scene)
     seed = scene.seed
     warn = plan.warnings.append
+    loose_told: set[str] = set()
+
+    def tell_if_loose(want, a, kind="prop"):
+        """Say so when the art only matched through a similar word (a 'stall' that came back
+        as a booth), so the user can check it or name a file."""
+        if a is not None and want not in loose_told and index.loose(want, a, kind):
+            loose_told.add(want)
+            warn(f"No close match for '{want}'; using {a.name}, found through a similar word.")
 
     # ---------- floors ----------
     def floor_asset(want):
@@ -219,12 +227,13 @@ def build(scene: Scene, index: Index) -> Plan:
             return a
         key = p.want if not p.vary else f"{p.want}#{i}"
         if key not in chosen:
-            a = index.pick(p.want, "prop", p.size, seed=seed + (i if p.vary else 0))
+            a = index.pick(p.want, "prop", p.size, seed=seed + (i if p.vary else 0), family_seed=seed if p.vary else None)
             if a is None:
                 # rugs, mats and similar sometimes live with floor textures
                 a = index.pick(p.want, "floor", seed=seed)
             if a is None:
                 warn(f"No asset matches '{p.want}'; it is shown as a labelled box.")
+            tell_if_loose(p.want, a)
             chosen[key] = a
         return chosen[key]
 
@@ -280,7 +289,7 @@ def build(scene: Scene, index: Index) -> Plan:
     # ---------- scatter ----------
     taken: list[tuple[float, float, float]] = []       # (x, y, radius) of scattered items so far
     for si, rule in enumerate(scene.scatter):
-        plan.props += _scatter(plan, rule, si, index, occupied | door_squares, taken, warn)
+        plan.props += _scatter(plan, rule, si, index, occupied | door_squares, taken, warn, tell_if_loose)
 
     plan.lights = list(scene.lights) + plan.lights
     for L in plan.lights:
@@ -341,7 +350,7 @@ def _region_named(plan: Plan, name: str):
     return None
 
 
-def _scatter(plan: Plan, rule, si: int, index: Index, blocked_squares, taken, warn) -> list:
+def _scatter(plan: Plan, rule, si: int, index: Index, blocked_squares, taken, warn, tell=lambda *_: None) -> list:
     """Place copies of ``rule.want`` inside a region, in clumps if asked, keeping off
     paths, water, buildings, furniture and each other."""
     sc = plan.scene
@@ -357,14 +366,14 @@ def _scatter(plan: Plan, rule, si: int, index: Index, blocked_squares, taken, wa
             return []
     inside_room = any(r.name.lower() == rule.within.lower() for r in sc.rooms)
     # Keep off paths, water and walled rooms by default, plus anything named in avoid.
-    avoid = []
+    avoid, solid = [], []          # solid: buildings, which a tree's canopy should not cover either
     if not (rule.avoid and any(str(a).lower() == "none" for a in rule.avoid)):
         # On open ground, keep off every path, area and pond; inside a named place, only off paths and water.
         on_map = rule.within.lower() == "map"
         avoid += [f.region for f in plan.floors[1:] if f.region is not region and not f.is_room
                   and (on_map or f.water or f.poly is None)]
         if not inside_room:
-            avoid += [Region(poly=r.poly) for r in sc.rooms if r.walls is not None]
+            solid += [Region(poly=r.poly) for r in sc.rooms if r.walls is not None]
     for a in rule.avoid or []:
         if str(a).lower() != "none":
             g = _region_named(plan, str(a))
@@ -383,18 +392,25 @@ def _scatter(plan: Plan, rule, si: int, index: Index, blocked_squares, taken, wa
         n = int(round(rule.density * cells / 4))
 
     def choose(i):
-        a = index.pick(name, "prop", rule.size, seed=sc.seed + (i if rule.vary else 0))
+        a = index.pick(name, "prop", rule.size, seed=sc.seed + (i if rule.vary else 0), family_seed=sc.seed if rule.vary else None)
         if a is None:
             a = index.pick(name, "prop", rule.size, seed=sc.seed)
+        tell(name, a)
         return a
 
     def free(x, y, r):
         if not (0 <= x <= W and 0 <= y <= H) or not region.contains(x, y):
             return False
-        edge = [(x, y)] + [(x + r * 0.7 * dx, y + r * 0.7 * dy) for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1))]
+        dirs = ((1, 0), (-1, 0), (0, 1), (0, -1), (0.7, 0.7), (-0.7, 0.7), (0.7, -0.7), (-0.7, -0.7))
+        edge = [(x, y)] + [(x + r * 0.7 * dx, y + r * 0.7 * dy) for dx, dy in dirs]
         if any(g.contains(px, py) for g in avoid for px, py in edge):
             return False
-        if (int(x), int(y)) in blocked_squares:
+        rim = [(x + r * dx, y + r * dy) for dx, dy in dirs]
+        if any(g.contains(px, py) for g in solid for px, py in edge + rim):
+            return False
+        # Big pieces (tree canopies) keep their whole spread off furniture so it stays in view;
+        # small ones (a pile of crates) may sit snug against it.
+        if any((int(px), int(py)) in blocked_squares for px, py in (edge if r > 0.75 else edge[:1])):
             return False
         return all(math.hypot(x - tx, y - ty) >= r + tr + rule.gap for tx, ty, tr in taken)
 

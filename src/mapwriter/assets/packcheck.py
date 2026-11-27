@@ -12,6 +12,7 @@ from collections import Counter
 from pathlib import Path
 
 from . import naming
+from . import index
 from .index import PACK_MANIFEST, scan
 
 COMMON_PPSQ = (70, 100, 128, 140, 150, 200, 256, 280, 300, 400)
@@ -20,6 +21,10 @@ COMMON_PPSQ = (70, 100, 128, 140, 150, 200, 256, 280, 300, 400)
 def guess_ppsq(assets) -> tuple[int | None, str]:
     """Pixels per square, from files that name their size (Barrel_1x1.png at 200 x 200
     px means 200) or, failing that, from the commonest small prop size."""
+    by_folder = Counter(a.ppsq for a in assets if index.folder_ppsq(a.rel))
+    if by_folder and sum(by_folder.values()) * 2 > len(assets):
+        v, n = by_folder.most_common(1)[0]
+        return v, f"{n} files sit in folders named for {v} DPI (one inch, {v} px, per square)"
     named = Counter()
     for a in assets:
         if a.px and a.kind in ("prop", "door", "window"):
