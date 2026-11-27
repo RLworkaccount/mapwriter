@@ -54,6 +54,8 @@ v0.4 cuts that to three pull requests:
 2. **Style matching** (done): a style profile for each pack (ink, colour strength, brightness, shadow, resolution). When several packs could supply a piece, the one closest to the map's main style wins, and an optional `match_style: true` gently grades mixed-in art (colour strength, brightness, shadow) towards the main pack at paint time.
 3. **Asset browser page** (done): `mapwriter browse` writes a local HTML page of thumbnails (kept on your computer, never uploaded) to search by words, kind, pack and colour, see each pack's style and the art that looks most alike, check guessed words, and mark corrections that download as a `tags.yaml`.
 
+Tried on the full Forgotten Adventures Core pack (27 Nov 2026, about 149,000 pictures: looks take under 3 minutes, thumbnails under 4). Fixes from that run: one pack per sub-folder (`--packs`, nested pack files, `skip:`), finished maps and demo sheets left out, signs and trophies ranked below the thing, smaller trees when big ones don't fit, stronger grading with outlines, a smaller index file.
+
 Later: showing in the browser what a scene's words would pick, real visible size from the drawn part (a 1x1 file with a tiny cup in it), near-copy grouping so scatter varies more, learning from your corrections, and the optional offline model.
 
 ## Known gaps in v0.1

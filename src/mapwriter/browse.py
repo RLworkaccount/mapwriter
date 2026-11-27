@@ -67,7 +67,8 @@ def write_browser(index, out_dir, thumbs: bool = True, workers: int = 8, packs=N
     data = [entry(a, f"thumbs/{n}" if good else None) for a, n, good in zip(assets, names, ok)]
     from .assets.style import describe
     styles = {p: {"text": describe(st), **st} for p, st in index.styles.items() if st}
-    meta = {"packs": index.pack_order, "styles": styles, "count": len(data)}
+    shown = {a.pack for a in assets}
+    meta = {"packs": [p for p in index.pack_order if p in shown], "styles": styles, "count": len(data)}
     page = PAGE.replace("/*DATA*/", "const ASSETS = " + json.dumps(data, separators=(",", ":")) + ";\n"
                         + "const META = " + json.dumps(meta, separators=(",", ":")) + ";")
     p = out / "index.html"

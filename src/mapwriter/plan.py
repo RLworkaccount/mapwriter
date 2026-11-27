@@ -46,7 +46,7 @@ class Placed:
     flip: bool = False
     fit_rot: float = 0.0                      # extra rotation to make the image fit the box
     part: str = ""                            # "top" for the upper piece of a layered asset
-    grade: tuple[float, float] | None = None  # (colour strength, brightness) to match the map's main style
+    grade: tuple | None = None                # (colour strength, brightness, outline) to match the main style
 
     @property
     def centre(self):
@@ -688,24 +688,31 @@ def _scatter(plan: Plan, rule, si: int, index: Index, blocked_squares, taken, wa
     for i in range(n):
         a = choose(i) if (rule.vary or art is None) else art
         art = art or a
-        fw, fh = rule.size or (tuple(a.footprint) if a is not None and a.footprint else (1, 1))
         k = rnd.uniform(*rule.scale) * boost
-        reach = 0.5 * min(fw, fh) * k * 0.9
-        dw, dh = drawn(a)
-        r = 0.5 * min(fw * dw, fh * dh) * k * 0.9          # spaced by the drawn part, not the whole square
         spots = []
-        for t in range(80):
-            if centres:
-                cx, cy = centres[(i + t // 12) % len(centres)]     # a full clump hands on to the next
-                x, y = rnd.gauss(cx, rule.spread / 2), rnd.gauss(cy, rule.spread / 2)
-            else:
-                x, y = rnd.uniform(x0, x1), rnd.uniform(y0, y1)
-            if free(x, y, r, reach):
-                spots.append((x, y))
-                # Spread out evenly: of a few free spots, take the one furthest from the rest,
-                # so a bed fills without bare patches. Clumps take the first spot.
-                if centres or len(spots) >= 6:
-                    break
+        for _size_try in range(4):
+            fw, fh = rule.size or (tuple(a.footprint) if a is not None and a.footprint else (1, 1))
+            reach = 0.5 * min(fw, fh) * k * 0.9
+            dw, dh = drawn(a)
+            r = 0.5 * min(fw * dw, fh * dh) * k * 0.9          # spaced by the drawn part, not the whole square
+            for t in range(80):
+                if centres:
+                    cx, cy = centres[(i + t // 12) % len(centres)]     # a full clump hands on to the next
+                    x, y = rnd.gauss(cx, rule.spread / 2), rnd.gauss(cy, rule.spread / 2)
+                else:
+                    x, y = rnd.uniform(x0, x1), rnd.uniform(y0, y1)
+                if free(x, y, r, reach):
+                    spots.append((x, y))
+                    # Spread out evenly: of a few free spots, take the one furthest from the rest,
+                    # so a bed fills without bare patches. Clumps take the first spot.
+                    if centres or len(spots) >= 6:
+                        break
+            if spots or rule.size or a is None:
+                break
+            # No room for art this big: try the next size down from the same pack (a smaller tree).
+            a = index.smaller(look_for, a, "prop", seed=sc.seed + i)
+            if a is None:
+                break
         if not spots:
             continue
         x, y = max(spots, key=lambda q: min((math.hypot(q[0] - tx, q[1] - ty) - tr for tx, ty, tr in mine), default=0))
