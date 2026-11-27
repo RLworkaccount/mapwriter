@@ -63,6 +63,7 @@ def cmd_index(args):
                 a.look = o.look
     if args.look:
         _say_looks(idx.add_looks(workers=args.workers, progress=_progress), None)
+        _say_styles(idx)
     idx.save(args.output)
     kinds = ", ".join(f"{v} {k}" for k, v in idx.kinds().items())
     print(f"Indexed {len(idx.assets)} assets ({kinds}) -> {args.output}")
@@ -95,6 +96,18 @@ def _say_looks(r: dict, suggest_path):
             print(f"Wrote the guesses to {suggest_path} to check.")
 
 
+def _say_styles(idx):
+    from .assets.style import describe
+    styled = [(p, idx.styles.get(p)) for p in idx.pack_order if idx.styles.get(p)]
+    if not styled:
+        return
+    print("Pack styles (props on average):")
+    for p, st in styled:
+        g = idx.style_gap(p)
+        near = "" if p == idx.main or g is None else f"  [{'close to' if g < 18 else 'differs from'} {idx.main}]"
+        print(f"  - {p}: {describe(st)}{near}")
+
+
 def yaml_key(text: str) -> str:
     import json
     return json.dumps(text)
@@ -112,6 +125,7 @@ def cmd_look(args):
         idx.save(p)
         print(f"{p}:")
         _say_looks(r, args.suggest)
+        _say_styles(idx)
 
 
 def cmd_pack_check(args):

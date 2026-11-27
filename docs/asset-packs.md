@@ -88,9 +88,22 @@ kinds:
   Grates/: overlay
 ```
 
+## Mixing packs
+
+Packs by different artists look different: one outlines everything in heavy black ink, another has soft colour and baked-in shadows. Once pictures are measured (`mapwriter look`), MapWriter keeps a style profile for each pack (black ink, colour strength, brightness, soft shadow) and `mapwriter look` prints them.
+
+- **The map's main style** is the first pack listed in the index, or the pack named by `style: { pack: ... }` in the scene.
+- **Missing art comes from the nearest style.** The main pack still supplies everything it has. When it has nothing for a word, the pack whose style is closest to the main one's goes next, rather than simply the next pack listed.
+- **A warning when styles clash.** If a map ends up with art in clearly different styles, `check` and `render` say which packs and how they differ.
+- **`style: { match: true }`** gently grades art from other packs towards the main style when painting: colour strength and brightness are moved part of the way (never more than about a third), and transparency is untouched. Outlines and shading drawn into the art stay as they are, so the nearest-style choice above matters most.
+
+```yaml
+style: { walls: stone wall, pack: Forgotten Adventures, match: true }
+```
+
 ## Several packs
 
-Index several folders into one file, or pass several `-i` indexes. The first pack listed that has the thing itself supplies it, so put your main pack first and the starter pack last as a fallback. For example, with Forgotten Adventures Core first, trees and crates come from FA, and market stalls (which Core lacks) come from the starter pack.
+Index several folders into one file, or pass several `-i` indexes. The first pack listed that has the thing itself supplies it, so put your main pack first and the starter pack last as a fallback. For example, with Forgotten Adventures Core first, trees and crates come from FA, and market stalls (which Core lacks) come from the starter pack. With pictures measured, packs after the first are tried in order of how close their style is to the first pack's (see Mixing packs).
 
 ## Licences
 

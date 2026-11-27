@@ -855,3 +855,65 @@ def test_look_and_like_commands_and_pack_check(tmp_path, capsys):
     r = check_pack(root, write=True)
     assert ("p/IMG_9.png", "rock") in r["guessed"] and r["style"]["ink"] < 0.1
     assert "'IMG_9.png': [rock]" in (Path(root) / "mapwriter-pack.yaml").read_text()
+
+
+# ------------------------------------------------------------------ v0.4: style matching
+def _inked(colour):
+    def draw(d, im):
+        w, h = im.size
+        d.ellipse([w * 0.12, h * 0.12, w * 0.88, h * 0.88], fill=colour, outline=(0, 0, 0), width=max(2, w // 7))
+    return draw
+
+
+def _style_packs(tmp_path):
+    muted = lambda i: _blob((120 + 4 * i, 100, 80), 0.38)
+    main = _pack(tmp_path / "Main", {f"p/{n}_{i}_1x1.png": ((200, 200), muted(i))
+                                     for n in ("Chair", "Stool", "Table") for i in range(2)})
+    ink = _pack(tmp_path / "Inky", {**{f"p/Barrel_{i}_1x1.png": ((200, 200), _inked((230, 120, 20))) for i in range(2)},
+                                    "p/Sign_1x1.png": ((200, 200), _inked((20, 200, 60)))})
+    soft = _pack(tmp_path / "Softy", {**{f"p/Barrel_{i}_1x1.png": ((200, 200), muted(i + 1)) for i in range(2)},
+                                      "p/Pot_1x1.png": ((200, 200), muted(3))})
+    return main, ink, soft
+
+
+def test_style_profiles_and_nearest_style_supplies_missing_art(tmp_path):
+    from mapwriter.assets.style import gap
+    main, ink, soft = _style_packs(tmp_path)
+    assert Index.build([main, ink, soft]).pick("barrel").pack == "Inky"      # by words: list order
+    idx = _index(main, ink, soft)
+    st = idx.styles
+    assert st["Inky"]["ink"] > st["Main"]["ink"] + 0.1
+    assert gap(st["Softy"], st["Main"]) < gap(st["Inky"], st["Main"])
+    assert idx.pick("barrel").pack == "Softy"                                  # nearest style to Main
+    idx.main_pack = "Inky"
+    assert idx.pick("barrel").pack == "Inky"
+
+
+def test_scene_style_pack_match_and_clash_warning(tmp_path):
+    main, ink, soft = _style_packs(tmp_path)
+    idx = _index(main, ink, soft)
+    base = {"name": "s", "grid": {"width": 6, "height": 6}, "ground": None,
+            "props": [{"want": "chair", "at": [0, 0]}, {"want": "sign", "at": [2, 2]}]}
+    plan = build(parse(base), idx)
+    assert any("clearly different styles" in w and "Inky" in w for w in plan.warnings)
+    assert all(p.grade is None for p in plan.props)
+    plan = build(parse({**base, "style": {"match": True}}), idx)
+    sign = next(p for p in plan.props if p.want == "sign")
+    assert sign.grade is not None and sign.grade[0] < 1                       # colour toned down
+    assert not any("clearly different styles" in w for w in plan.warnings)
+    assert next(p for p in plan.props if p.want == "chair").grade is None
+    assert idx.main_pack is None                                               # build leaves the index as it was
+    plan = build(parse({**base, "style": {"pack": "Nowhere"}}), idx)
+    assert any("'Nowhere' is not in the index" in w for w in plan.warnings)
+
+
+def test_grading_changes_colour_and_keeps_transparency(tmp_path):
+    from PIL import Image
+    from mapwriter.assets.style import apply_grade
+    from mapwriter.assets.look import measure
+    im = Image.new("RGBA", (40, 40), (0, 0, 0, 0))
+    from PIL import ImageDraw
+    ImageDraw.Draw(im).ellipse([5, 5, 35, 35], fill=(230, 120, 20, 255))
+    out = apply_grade(im, (0.7, 0.9))
+    assert out.getchannel("A").tobytes() == im.getchannel("A").tobytes()
+    assert measure(out)["sat"] < measure(im)["sat"] and measure(out)["bright"] < measure(im)["bright"]

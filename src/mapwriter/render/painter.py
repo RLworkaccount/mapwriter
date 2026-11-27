@@ -91,7 +91,7 @@ class Painter:
             d = ImageDraw.Draw(im)
             d.rounded_rectangle([2, 2, im.width - 3, im.height - 3], radius=r, outline=(50, 40, 40, 200), width=max(2, int(cv.R * 0.05)))
             return im
-        im = cv.raw(a)
+        im = cv.graded(a, p.grade) if p.grade else cv.raw(a)
         rot = (p.rot + p.fit_rot) % 360
         if p.flip:
             from PIL import ImageOps

@@ -46,6 +46,7 @@ class Placed:
     flip: bool = False
     fit_rot: float = 0.0                      # extra rotation to make the image fit the box
     part: str = ""                            # "top" for the upper piece of a layered asset
+    grade: tuple[float, float] | None = None  # (colour strength, brightness) to match the map's main style
 
     @property
     def centre(self):
@@ -133,6 +134,46 @@ def _fit(asset: Asset | None, size, rot):
 
 
 def build(scene: Scene, index: Index) -> Plan:
+    """Choose art and place everything. The scene's ``style: pack`` (or the first pack
+    listed) sets the style that art from other packs is matched to."""
+    before = index.main_pack
+    index.main_pack = scene.style_pack
+    try:
+        plan = _build(scene, index)
+        _match_styles(plan, index)
+        return plan
+    finally:
+        index.main_pack = before
+
+
+def _match_styles(plan: Plan, index: Index):
+    """Grade art from other packs towards the main pack's style (style: { match: true }),
+    or say when the map mixes clearly different styles."""
+    from .assets.style import CLASH, describe, grade_for
+    sc = plan.scene
+    if sc.style_pack and sc.style_pack not in index.styles:
+        plan.warnings.append(f"style: pack '{sc.style_pack}' is not in the index; packs are: "
+                             f"{', '.join(index.pack_order) or 'none'}.")
+    main = index.main
+    target = index.styles.get(main)
+    if not target:
+        return
+    used = {p.asset.pack for p in plan.props if p.asset is not None}
+    if sc.match_style:
+        for p in plan.props:
+            if p.asset is not None and p.asset.pack != main and p.asset.kind != "floor":
+                p.grade = grade_for(index.styles.get(p.asset.pack), target)
+        return
+    clashes = [(pk, index.style_gap(pk)) for pk in sorted(used - {main})]
+    clashes = [(pk, g) for pk, g in clashes if g is not None and g > CLASH]
+    if clashes and main in used | {plan.wall_asset.pack if plan.wall_asset else None}:
+        pk = clashes[0][0]
+        plan.warnings.append(
+            f"This map mixes art in clearly different styles: {main} ({describe(target)}) and {pk} "
+            f"({describe(index.styles[pk])}). Add style: {{ match: true }} to even out colour and brightness.")
+
+
+def _build(scene: Scene, index: Index) -> Plan:
     plan = Plan(scene)
     seed = scene.seed
     warn = plan.warnings.append

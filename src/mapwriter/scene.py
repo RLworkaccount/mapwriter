@@ -225,6 +225,8 @@ class Scene:
     versions: list[str] = field(default_factory=lambda: ["day", "night"])
     ambient: dict = field(default_factory=lambda: {"day": (246, 240, 228), "night": (74, 82, 128)})
     source: str | None = None
+    style_pack: str | None = None       # style: { pack }: the pack whose look the map keeps to
+    match_style: bool = False           # style: { match: true }: grade mixed-in art towards it
 
     def room(self, name: str) -> Room:
         for r in self.rooms:
@@ -354,7 +356,9 @@ def parse(data: dict, source: str | None = None) -> Scene:
                px_per_square=int(grid.get("px_per_square", 140)), seed=int(data.get("seed", 1)),
                ground=data.get("ground", "stone floor"),
                wall_style=style.get("walls", "stone wall"), door_style=style.get("doors", "wood door"),
-               window_style=style.get("windows", "wood window"), source=source)
+               window_style=style.get("windows", "wood window"), source=source,
+               style_pack=str(style["pack"]) if style.get("pack") else None,
+               match_style=bool(style.get("match", False)))
 
     for i, a in enumerate(data.get("areas") or []):
         what = f"areas[{i}] ({a.get('name', '?')})"
