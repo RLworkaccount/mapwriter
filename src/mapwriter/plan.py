@@ -393,6 +393,7 @@ def _build(scene: Scene, index: Index) -> Plan:
                 plan.lights.append(Light((cx, cy), r, c, inten, "both"))
 
     _face_tables(seated)
+    _snug_seats(seated)
 
     # ---------- scatter ----------
     taken: list[tuple[float, float, float]] = []       # (x, y, radius) of scattered items so far
@@ -472,6 +473,67 @@ def _face_tables(seated) -> None:
             part.rot = float(rot)
 
 
+def _snug_seats(seated) -> None:
+    """Seats along one side of a table are spread evenly along that side, centred on it, and
+    pulled in until the seat's drawn edge meets the table's drawn edge. Round table art often
+    draws well inside its box, and a chair set on the next square would leave grass between.
+    Seats at a corner, long seats and seats marked snug: false stay where they were put."""
+    tables = [(pl, p) for pl, p, _ in seated if _words_of(pl, p) & TABLE_WORDS and not _words_of(pl, p) & SEAT_WORDS]
+    if not tables:
+        return
+    sides: dict[tuple[int, str], list] = {}
+    for pl, p, parts in seated:
+        words = _words_of(pl, p)
+        if not p.snug or not (words & SEAT_WORDS) or words & TABLE_WORDS:
+            continue
+        x0, y0, x1, y1 = pl.box
+        if abs((x1 - x0) - (y1 - y0)) > 0.01:
+            continue
+        cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+        best = None
+        for ti, (tpl, _tp) in enumerate(tables):
+            tx0, ty0, tx1, ty1 = tpl.box
+            nx, ny = min(max(cx, tx0), tx1), min(max(cy, ty0), ty1)
+            d = math.hypot(nx - cx, ny - cy)
+            if 0 < d <= 1.0 + 0.5 * (x1 - x0) and (best is None or d < best[0]):
+                best = (d, ti, nx - cx, ny - cy)
+        if best is None or (abs(best[2]) > 1e-6 and abs(best[3]) > 1e-6):
+            continue                          # at a corner: leave it
+        _, ti, dx, dy = best
+        side = "west" if dx > 0 else "east" if dx < 0 else "north" if dy > 0 else "south"
+        sides.setdefault((ti, side), []).append((pl, parts))
+    for (ti, side), seats in sides.items():
+        tpl = tables[ti][0]
+        tx0, ty0, tx1, ty1 = tpl.box
+        tw, th = tx1 - tx0, ty1 - ty0
+        dw, dh = drawn(tpl.asset) if tpl.asset is not None else (1.0, 1.0)
+        dw, dh = dw * tpl.scale, dh * tpl.scale
+        # The table's drawn edges (art is drawn about the middle of its box).
+        ex0, ex1 = tx0 + tw * (1 - dw) / 2, tx1 - tw * (1 - dw) / 2
+        ey0, ey1 = ty0 + th * (1 - dh) / 2, ty1 - th * (1 - dh) / 2
+        along_x = side in ("north", "south")
+        seats.sort(key=lambda s: (s[0].box[0] if along_x else s[0].box[1]))
+        lo, hi = (tx0, tx1) if along_x else (ty0, ty1)
+        m = len(seats)
+        for j, (pl, parts) in enumerate(seats):
+            x0, y0, x1, y1 = pl.box
+            size = x1 - x0
+            sw, sh = drawn(pl.asset) if pl.asset is not None else (1.0, 1.0)
+            inset = size * (1 - max(sw, sh) * pl.scale) / 2 - 0.05   # tuck in a little
+            mid = lo + (j + 0.5) * (hi - lo) / m
+            if side == "north":
+                nx0, ny0 = mid - size / 2, ey0 - size + inset
+            elif side == "south":
+                nx0, ny0 = mid - size / 2, ey1 - inset
+            elif side == "west":
+                nx0, ny0 = ex0 - size + inset, mid - size / 2
+            else:
+                nx0, ny0 = ex1 - inset, mid - size / 2
+            box = (nx0, ny0, nx0 + size, ny0 + size)
+            for part in parts:
+                part.box = box
+
+
 def _light_area(scene: Scene, L: Light, blockers) -> list:
     """Where a light reaches, cast against the walls. A light sitting on a wall line
     (a sconce, a fireplace against the wall) is nudged into its room first, so it
@@ -502,7 +564,7 @@ def drawn(a: Asset | None) -> tuple[float, float]:
             from .assets.look import look_at
             lk = look_at(a.path) or {}
         bx = lk.get("box") or [0, 0, 1, 1]
-        _DRAWN[a.path] = (max(0.2, min(1.0, bx[2] - bx[0])), max(0.2, min(1.0, bx[3] - bx[1])))
+        _DRAWN[a.path] = (max(0.1, min(1.0, bx[2] - bx[0])), max(0.1, min(1.0, bx[3] - bx[1])))
     return _DRAWN[a.path]
 
 
@@ -569,6 +631,7 @@ def _scatter(plan: Plan, rule, si: int, index: Index, blocked_squares, taken, wa
         tell(name, a)
         return a
 
+    boost = 1.0
     if rule.count is not None:
         n = max(0, rule.count)
     else:
@@ -580,9 +643,12 @@ def _scatter(plan: Plan, rule, si: int, index: Index, blocked_squares, taken, wa
             a0 = choose(0)
             fw, fh = rule.size or (tuple(a0.footprint) if a0 is not None and a0.footprint else (1, 1))
             dw, dh = drawn(a0)
-            k = sum(rule.scale) / 2
+            # Single sprigs (a flower drawn on a fifth of its square) are drawn a little bigger
+            # so a bed reads as flowers, and a square holds at most six.
+            boost = max(1.0, min(2.0, 0.35 / max(0.05, min(dw * fw, dh * fh))))
+            k = sum(rule.scale) / 2 * boost
             each = max(0.05, fw * dw * fh * dh * k * k)
-            n = int(round(rule.cover * cells / 4 / each))
+            n = int(round(min(rule.cover / each, 6.0) * cells / 4))
         else:
             n = int(round(rule.density * cells / 4))
 
@@ -623,7 +689,7 @@ def _scatter(plan: Plan, rule, si: int, index: Index, blocked_squares, taken, wa
         a = choose(i) if (rule.vary or art is None) else art
         art = art or a
         fw, fh = rule.size or (tuple(a.footprint) if a is not None and a.footprint else (1, 1))
-        k = rnd.uniform(*rule.scale)
+        k = rnd.uniform(*rule.scale) * boost
         reach = 0.5 * min(fw, fh) * k * 0.9
         dw, dh = drawn(a)
         r = 0.5 * min(fw * dw, fh * dh) * k * 0.9          # spaced by the drawn part, not the whole square

@@ -997,3 +997,49 @@ def test_cover_fills_a_bed_evenly_with_small_art(starter):
             assert min((p.centre[0] - x - 0.5) ** 2 + (p.centre[1] - y - 0.5) ** 2 for p in flowers) < 0.8 ** 2
     with pytest.raises(SceneError, match="cover"):
         parse({**data, "scatter": [{"want": "flowers", "in": "bed", "cover": 3}]})
+
+
+def test_seats_sit_snug_and_centred_on_a_table_side(starter):
+    # The report's layout: chairs a square off a 2x2 round table and off its centre.
+    data = {"name": "Snug", "grid": {"width": 24, "height": 18}, "ground": "grass", "props": [
+        {"want": "round table", "at": [16, 11], "size": [2, 2]},
+        {"want": "chair", "at": [16, 10]}, {"want": "chair", "at": [17, 13], "rot": 180},
+        {"want": "round table", "at": [4, 4], "size": [3, 1]},
+        {"want": "chair", "at": [4, 5]}, {"want": "chair", "at": [5, 5]},
+        {"want": "chair", "at": [9, 9], "snug": False}]}
+    from mapwriter.plan import drawn
+    plan = build(parse(data), starter)
+    t1 = plan.props[0]
+    north, south = [p for p in plan.props[1:3]]
+    assert north.centre[0] == pytest.approx(17) and south.centre[0] == pytest.approx(17)   # centred on the side
+    edge = 11 + 2 * (1 - drawn(t1.asset)[1]) / 2                     # the table's drawn top edge
+    chair_drawn = 1 - (1 - max(drawn(north.asset))) / 2             # the chair's drawn lower edge
+    assert north.box[1] + chair_drawn == pytest.approx(edge - 0.05)  # touching, tucked in a little
+    pair = [p for p in plan.props if p.want == "chair" and 4.5 < p.centre[1] < 6.5]
+    assert sorted(round(p.centre[0], 2) for p in pair) == [4.75, 6.25]   # two seats share the side evenly
+    assert plan.props[-1].box == (9, 9, 10, 10)                       # snug: false stays put
+
+
+def test_cover_draws_tiny_sprigs_bigger_and_caps_the_count(tmp_path):
+    from PIL import Image, ImageDraw
+    (tmp_path / "Flora").mkdir()
+    for i in range(3):
+        im = Image.new("RGBA", (200, 200))
+        ImageDraw.Draw(im).ellipse([78, 78, 122, 122], fill=(40, 160, 150, 255))   # a sprig on ~22% of the width
+        im.save(tmp_path / "Flora" / f"Flower_Turquoise_A{i}_1x1.png")
+    idx = Index.build([str(tmp_path)])
+    data = {"name": "Bed", "grid": {"width": 10, "height": 8}, "ground": "grass",
+            "areas": [{"name": "bed", "box": [1, 1, 9, 7], "floor": "dirt"}],
+            "scatter": [{"want": "flowers", "in": "bed", "cover": 0.8, "gap": -0.1}]}
+    plan = build(parse(data), idx)
+    flowers = [p for p in plan.props if p.want == "flowers"]
+    assert 150 <= len(flowers) <= 6 * 48            # many sprigs, but at most six a square
+    assert all(1.4 < p.scale < 1.8 for p in flowers)   # drawn bigger so the bed reads
+
+
+def test_river_rocks_lose_to_plain_rocks_in_a_mixed_folder():
+    names = ["2MT/River and Water Assets/Assets/Rocks 1.png",
+             "FA/Woodlands/!Wilderness/Rocks/Rock_Grey_A1_1x1.webp",
+             "FA/Woodlands/!Wilderness/Rocks/Rock_Grey_A2_1x1.webp"]
+    idx = Index([describe(n, "Map art", "/m") for n in names])
+    assert all(idx.pick("rock", seed=s).name.startswith("Rock_Grey") for s in range(8))

@@ -166,7 +166,7 @@ props:
 | `at` | Top-left corner of the squares it covers |
 | `centre` | Its centre point, instead of `at` |
 | `size` | `[w, h]` in squares. If the art is long the other way, it is turned to fit |
-| `rot` | Degrees clockwise. `0` means the back of the item faces north (chairs face south). A chair, stool, armchair or other seat with no `rot` turns to face the nearest table, desk or counter beside it (on the diagonal at a corner) |
+| `rot` | Degrees clockwise. `0` means the back of the item faces north (chairs face south). A chair, stool, armchair or other seat with no `rot` turns to face the nearest table, desk or counter beside it (on the diagonal at a corner). Seats along a side of a table are spread evenly along it, centred, and pulled in until they meet the table's drawn edge; add `snug: false` to keep a seat exactly where `at` puts it |
 | `in` | A room name: MapWriter finds free spots inside it, away from doors |
 | `along` | With `in`: put it against that wall (`north`, `south`, `east`, `west`), facing into the room |
 | `count` | How many, for `in` placement |
@@ -201,7 +201,7 @@ scatter:
 | `in` | An area, path, water (or its bank, e.g. `duck pond bank`) or room name, or `map` | `map` |
 | `count` | How many | |
 | `density` | How many per square, used when `count` is not given | |
-| `cover` | How much of the ground to cover, `0` to `1` (up to `1.5` with overlaps), used instead of `count` or `density`. MapWriter measures how much of its square the art draws, so a bed of small blooms gets enough of them to look full | |
+| `cover` | How much of the ground to cover, `0` to `1` (up to `1.5` with overlaps), used instead of `count` or `density`. MapWriter measures how much of its square the art draws, so a bed of small blooms gets enough of them to look full. Single sprigs that draw on under about a third of their square are drawn up to twice as big, and a square holds at most six | |
 | `cluster` | Average number in each clump. `1` spreads them out evenly | `1` |
 | `spread` | How far a clump reaches from its middle, in squares | `1.5` |
 | `gap` | Space kept between items, in squares. Negative lets them overlap (tree canopies) | `0.1` |
