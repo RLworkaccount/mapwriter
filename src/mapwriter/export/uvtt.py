@@ -51,9 +51,12 @@ def uvtt_data(plan: Plan, image: Image.Image | None, fmt="webp", quality=88, ste
     Left out, every light is written with the night ambient."""
     sc = plan.scene
     # For sight, every opening is a gap; windows and doors come back as portals.
-    segs = merge_walls(plan.raw_walls, [o for o, _ in plan.openings if o.kind != "secret"])
+    gaps = [o for o, _ in plan.openings if o.kind != "secret"]
+    glass = set(plan.see_through_walls)
+    segs = merge_walls([w for w in plan.raw_walls if w not in glass], gaps)
     los = [_resample(*s, step=step) for s in segs]
-    portals = []
+    # Glass walls come in as windows: they stop movement but let sight and light through.
+    portals = [_portal((x0, y0), (x1, y1), False) for x0, y0, x1, y1 in merge_walls(list(glass), gaps)]
     for o, _ in plan.openings:
         if o.kind in ("arch", "secret"):
             continue

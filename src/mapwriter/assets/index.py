@@ -387,16 +387,25 @@ class Index:
                 return random.Random(f"{seed}:{asset.rel}").choice(best)
         return None
 
-    def pick(self, want: str, kind: str | None = "prop", size=None, seed: int = 0, family_seed: int | None = None):
+    def pick(self, want: str, kind: str | None = "prop", size=None, seed: int = 0, family_seed: int | None = None,
+             small: bool = False):
         """Choose one asset: a seeded pick among the near-best matches.
 
         With ``family_seed`` (used when each copy gets its own ``seed``), one family of art is
         chosen first, such as all of ``Tree_Green_*``, and the copies vary inside it. Then a
         wood is all green trees rather than a mix of summer and autumn ones. Flowers may mix colours.
+
+        With ``small``, 1x1 art wins when there is any that is not only a loose match: 'apple'
+        gets an apple rather than a handcart of apples from another pack.
         """
         res = self.search(want, kind, size, limit=None)
         if not res:
             return None
+        if small:
+            ones = [(s, a) for s, a in res if a.footprint and a.footprint[0] * a.footprint[1] <= 1
+                    and not self.loose(want, a, kind)]
+            if ones:
+                res = ones
         # The first pack listed that has the thing itself (not only something with a similar
         # name) supplies it, so a small fill-in pack listed later never wins on wording alone.
         rank = {p: i for i, p in enumerate(self.pack_order)}

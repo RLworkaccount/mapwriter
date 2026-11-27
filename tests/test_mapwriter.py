@@ -631,3 +631,90 @@ def test_sketch_light_rings_optional(starter):
 
 def test_plural_folding():
     assert naming.singular("bushes") == "bush" and naming.singular("benches") == "bench" and naming.singular("boxes") == "box"
+
+
+# ------------------------------------------------------------------ wall looks: glass, hedges, fences
+def test_wall_looks_glass_hedges_and_fences(starter):
+    from mapwriter.export.uvtt import uvtt_data
+    from mapwriter.render.painter import Painter
+    data = {"name": "Looks", "grid": {"width": 14, "height": 10, "px_per_square": 20}, "ground": "grass",
+            "rooms": [{"name": "Glasshouse", "box": [1, 1, 6, 6], "see_through": True,
+                       "doors": [{"wall": "south", "at": 3}]},
+                      {"name": "Pen", "box": [8, 1, 12, 5], "walls": "wood fence"}],
+            "walls": [{"points": [[1, 8], [6, 8], [6, 9]], "style": "hedge", "thickness": 1}],
+            "lights": [{"at": [3.5, 3.5], "radius": 6}]}
+    sc = parse(data)
+    assert len(sc.walls) == 2 and sc.wall_looks[0].thickness == 1.0     # a polyline becomes two walls
+    plan = build(sc, starter)
+    glass = set(plan.see_through_walls)
+    assert len(glass) == 8                                              # the glasshouse, plus the fence (by its words)
+    assert any(ws.thickness == 1.0 and not ws.see_through for ws in plan.wall_sets)
+    # Light passes the glass: the light reaches well past the glasshouse walls.
+    xs = [x for x, _ in plan.light_areas[0]]
+    assert max(xs) > 7 and min(xs) < 0.5
+    d = uvtt_data(plan, None)
+    windows = [p for p in d["portals"] if not p["closed"]]
+    assert len(windows) >= 8                                            # glass and fence sides, door gap cut out
+    los_points = [pt for line in d["line_of_sight"] for pt in line]
+    assert not any(pt["x"] == 1 and 1 < pt["y"] < 6 for pt in los_points)  # glass is not a sight-blocking wall
+    Painter(plan).walls()                                                # paints each set at its own thickness
+
+
+def test_scatter_inside_an_area_within_a_walled_room(starter):
+    data = {"name": "Beds", "grid": {"width": 12, "height": 10, "px_per_square": 20}, "ground": "grass",
+            "rooms": [{"name": "Glasshouse", "box": [1, 1, 11, 9], "doors": [{"wall": "south", "at": 5}]}],
+            "areas": [{"name": "bed", "box": [2, 2, 6, 5], "floor": "dirt"}],
+            "scatter": [{"want": "bush", "in": "bed", "count": 4}]}
+    plan = build(parse(data), starter)
+    assert sum(p.want == "bush" for p in plan.props) == 4, plan.warnings
+
+
+def test_wall_look_errors():
+    base = {"name": "x", "grid": {"width": 6, "height": 6}}
+    with pytest.raises(SceneError):
+        parse({**base, "walls": [{"points": [[0, 0], [2, 2]]}]})
+    with pytest.raises(SceneError):
+        parse({**base, "walls": [{"from": [0, 0], "to": [2, 0], "thickness": "thick"}]})
+    with pytest.raises(SceneError):
+        parse({**base, "rooms": [{"name": "r", "box": [0, 0, 3, 3], "see_through": "yes"}]})
+
+
+# ------------------------------------------------------------------ fixes from map-making sessions
+def test_small_scale_prefers_single_square_art():
+    names = ["Props/Carts/Handcart_Apples_3x2.webp", "Food/Fruit/Apple_Red_1x1.webp",
+             "Market/Stalls/Stall_Bread_3x2.webp", "Food/Bread/Bread_Loaf_1x1.webp"]
+    idx = Index([describe(n, "FA", "/fa") for n in names])
+    assert idx.pick("apple", small=True).footprint == [1, 1]
+    assert idx.pick("bread", small=True).footprint == [1, 1]
+    sc = parse({"name": "s", "grid": {"width": 8, "height": 8},
+                "props": [{"want": "apple", "at": [1, 1], "scale": 0.5}, {"want": "bread", "at": [3, 3], "scale": 0.6}]})
+    plan = build(sc, idx)
+    assert all(pl.asset.footprint == [1, 1] for pl in plan.props)
+
+
+def test_small_scale_keeps_big_art_when_no_small_match():
+    idx = Index([describe("Props/Carts/Handcart_Apples_3x2.webp", "FA", "/fa")])
+    assert idx.pick("apple", small=True).footprint == [3, 2]
+
+
+def test_roof_textures_work_as_floors():
+    names = ["Textures/Roof_Thatch_A.webp", "Textures/Wooden_Flooring_Oak.webp"]
+    idx = Index([describe(n, "FA", "/fa") for n in names])
+    assert idx.assets[0].kind == "roof"
+    for want in ("thatch roof", "thatch"):
+        sc = parse({"name": "r", "grid": {"width": 6, "height": 6},
+                    "rooms": [{"name": "loft", "box": [1, 1, 4, 4], "floor": want, "walls": "none"}]})
+        plan = build(sc, idx)
+        loft = next(f for f in plan.floors if f.name == "loft")
+        assert loft.asset is not None and "Roof_Thatch" in loft.asset.rel, want
+        assert not any(f"'{want}'" in w for w in plan.warnings), plan.warnings
+
+
+def test_overlap_ok_silences_overlap_warning(starter):
+    def warnings(extra):
+        sc = parse({"name": "o", "grid": {"width": 10, "height": 8},
+                    "props": [{"want": "market stall", "at": [2, 2]}, dict({"want": "counter", "at": [2, 3], "size": [3, 1]}, **extra)]})
+        return [w for w in build(sc, starter).warnings if "overlaps" in w]
+    assert warnings({})
+    assert not warnings({"overlap": "ok"})
+    assert not warnings({"layer": 2})

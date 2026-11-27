@@ -26,6 +26,13 @@ class SceneError(ValueError):
     pass
 
 
+def _yes(v) -> bool:
+    """true, yes and ok (as in overlap: ok) all mean yes."""
+    if isinstance(v, str):
+        return v.strip().lower() in ("ok", "yes", "true", "on", "allow")
+    return bool(v)
+
+
 def colour(value, default=(255, 196, 120)):
     if value is None:
         return default
@@ -53,6 +60,15 @@ class Opening:
         return self.a[1] == self.b[1]
 
 
+@dataclass(frozen=True)
+class WallLook:
+    """How a stretch of wall looks and behaves: its art words, whether sight and light
+    pass through it (glass), and how thick it is drawn, in squares."""
+    style: str | None = None          # None: the scene's default wall style
+    see_through: bool | None = None   # None: yes when the words say glass
+    thickness: float | None = None
+
+
 @dataclass
 class Room:
     name: str
@@ -62,6 +78,8 @@ class Room:
     label: str | None = None
     openings: list[Opening] = field(default_factory=list)
     light: bool = True                # whether lights inside are clipped to this room
+    see_through: bool | None = None   # glass walls: block movement, let sight and light through
+    wall_thickness: float | None = None   # in squares; None uses the usual wall thickness
 
     @property
     def box(self):
@@ -127,6 +145,7 @@ class Prop:
     shadow: bool = True
     flip: bool = False
     top: bool = True              # draw the pack's matching top piece, if it has one
+    overlap: bool = False         # built to overlap other furniture: no overlap warning
 
 
 @dataclass
@@ -198,6 +217,7 @@ class Scene:
     water: list[Water] = field(default_factory=list)
     scatter: list[Scatter] = field(default_factory=list)
     walls: list[tuple[float, float, float, float]] = field(default_factory=list)
+    wall_looks: list[WallLook] = field(default_factory=list)    # one for each entry in walls
     openings: list[Opening] = field(default_factory=list)
     props: list[Prop] = field(default_factory=list)
     lights: list[Light] = field(default_factory=list)
@@ -298,6 +318,22 @@ def _side_opening(room_poly, spec, kind, what):
     return out
 
 
+def _wall_look(spec, what) -> WallLook:
+    style = spec.get("style")
+    see = spec.get("see_through")
+    if see is not None and not isinstance(see, bool):
+        raise SceneError(f"{what}: see_through should be true or false")
+    th = spec.get("thickness")
+    if th is not None:
+        try:
+            th = float(th)
+        except (TypeError, ValueError):
+            raise SceneError(f"{what}: thickness should be a number of squares, such as 0.5")
+        if not 0 < th <= 4:
+            raise SceneError(f"{what}: thickness should be between 0 and 4 squares")
+    return WallLook(str(style) if style else None, see, th)
+
+
 def _free_opening(spec, kind, what):
     a = _pt(spec["from"], what); b = _pt(spec["to"], what)
     if a[0] != b[0] and a[1] != b[1]:
@@ -373,6 +409,8 @@ def parse(data: dict, source: str | None = None) -> Scene:
         if walls in (False, "none", "no", None):
             walls = None
         room = Room(str(r.get("name", f"room {i + 1}")), poly, r.get("floor"), walls, r.get("label"))
+        rl = _wall_look({"see_through": r.get("see_through"), "thickness": r.get("wall_thickness")}, what)
+        room.see_through, room.wall_thickness = rl.see_through, rl.thickness
         for key, kind in (("doors", "door"), ("windows", "window"), ("arches", "arch")):
             for j, o in enumerate(r.get(key) or []):
                 w2 = f"{what} {key}[{j}]"
@@ -386,15 +424,26 @@ def parse(data: dict, source: str | None = None) -> Scene:
 
     for i, wl in enumerate(data.get("walls") or []):
         what = f"walls[{i}]"
+        look = WallLook()
         if isinstance(wl, dict):
-            a = _pt(wl["from"], what); b = _pt(wl["to"], what)
-            wl = [a[0], a[1], b[0], b[1]]
-        if len(wl) != 4:
-            raise SceneError(f"{what}: give {{from: [x, y], to: [x, y]}}")
-        x0, y0, x1, y1 = map(float, wl)
-        if x0 != x1 and y0 != y1:
-            raise SceneError(f"{what}: walls must be straight across or down")
-        sc.walls.append((x0, y0, x1, y1))
+            look = _wall_look(wl, what)
+            if "points" in wl:
+                pts = [_pt(q, what) for q in wl["points"]]
+                if len(pts) < 2:
+                    raise SceneError(f"{what}: points needs at least two [x, y] points")
+            elif "from" in wl and "to" in wl:
+                pts = [_pt(wl["from"], what), _pt(wl["to"], what)]
+            else:
+                raise SceneError(f"{what}: give {{from: [x, y], to: [x, y]}} or points: [[x, y], ...]")
+        else:
+            if not isinstance(wl, (list, tuple)) or len(wl) != 4:
+                raise SceneError(f"{what}: give {{from: [x, y], to: [x, y]}}")
+            pts = [(float(wl[0]), float(wl[1])), (float(wl[2]), float(wl[3]))]
+        for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
+            if x0 != x1 and y0 != y1:
+                raise SceneError(f"{what}: walls must be straight across or down")
+            sc.walls.append((x0, y0, x1, y1))
+            sc.wall_looks.append(look)
 
     for key, kind in (("doors", "door"), ("windows", "window"), ("arches", "arch")):
         for j, o in enumerate(data.get(key) or []):
@@ -414,7 +463,8 @@ def parse(data: dict, source: str | None = None) -> Scene:
             size=size, rot=float(p.get("rot", 0)), room=p.get("in"), along=p.get("along"),
             count=int(p.get("count", 1)), label=p.get("label"), light=p.get("light"),
             scale=float(p.get("scale", 1.0)), layer=p.get("layer"), vary=bool(p.get("vary", False)),
-            shadow=bool(p.get("shadow", True)), flip=bool(p.get("flip", False)), top=bool(p.get("top", True))))
+            shadow=bool(p.get("shadow", True)), flip=bool(p.get("flip", False)), top=bool(p.get("top", True)),
+            overlap=_yes(p.get("overlap", False))))
         pr = sc.props[-1]
         if pr.at is None and pr.centre is None and pr.room is None:
             raise SceneError(f"{what} ({pr.want or pr.file}): give at: [x, y], centre: [x, y], or in: <room>")

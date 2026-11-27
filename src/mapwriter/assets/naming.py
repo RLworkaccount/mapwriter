@@ -26,6 +26,8 @@ KIND_RULES = [
     ("overlay", {"shadow", "path"}),
     ("roof", {"roof"}),
     ("wall", {"wall", "path"}),
+    ("wall", {"hedge", "path"}),         # hedge maze strips, drawn like walls
+    ("wall", {"fence", "path"}),
     ("wall", {"walls"}),
     ("door", {"door"}),
     ("door", {"doors"}),
